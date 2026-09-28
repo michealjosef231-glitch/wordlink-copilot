@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "calibrated": false,
+  "proxy_formula": "dot_sum * word_length",
+  "execution_estimate": {
+    "start_seconds": 0.20,
+    "seconds_per_tile": 0.12,
+    "seconds_per_turn": 0.04
+  },
+  "notes": [
+    "This ranking proxy is not observed game points and makes no claim about the Triumph scoring formula.",
+    "Gesture durations are heuristic estimates from tile count and direction changes, not measured human execution times.",
+    "Coefficients require real observations before any calibrated scoring claim can be made."
+  ]
+}

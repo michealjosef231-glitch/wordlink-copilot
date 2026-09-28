@@ -1,0 +1,2 @@
+# No game acceptance has been confirmed yet.
+# Add one word per line only after an explicit user-observed acceptance.

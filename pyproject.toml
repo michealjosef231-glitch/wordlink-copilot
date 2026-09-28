@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wordlink-copilot"
+version = "0.1.0"
+description = "An offline screenshot and recording analyzer for 4x4 word boards"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.0,<3", "opencv-python-headless==4.10.0.84", "Pillow>=10,<13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+wordlink = "wordlink.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wordlink"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

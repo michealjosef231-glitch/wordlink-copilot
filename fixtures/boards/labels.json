@@ -1,0 +1,177 @@
+{
+  "label_method": "Lead independently inspected the original extracted frames and read all16 letters/dots; test images are board-only crops to exclude notifications and unrelated UI. No font templates are fitted from these test labels.",
+  "boards": [
+    {
+      "file": "frame_010.000.png",
+      "timestamp_seconds": 10,
+      "letters": [
+        "NOAI",
+        "AERN",
+        "GLUT",
+        "GNOV"
+      ],
+      "dots": [
+        [
+          1,
+          2,
+          2,
+          2
+        ],
+        [
+          2,
+          1,
+          1,
+          1
+        ],
+        [
+          3,
+          1,
+          2,
+          1
+        ],
+        [
+          3,
+          1,
+          2,
+          4
+        ]
+      ],
+      "score_display": 0,
+      "source_crop_xywh": [
+        64,
+        200,
+        384,
+        368
+      ]
+    },
+    {
+      "file": "frame_040.000.png",
+      "timestamp_seconds": 40,
+      "letters": [
+        "EETE",
+        "NLYO",
+        "GNNE",
+        "GOOV"
+      ],
+      "dots": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          3,
+          2
+        ],
+        [
+          3,
+          1,
+          1,
+          1
+        ],
+        [
+          3,
+          2,
+          2,
+          4
+        ]
+      ],
+      "score_display": 1115,
+      "source_crop_xywh": [
+        64,
+        200,
+        384,
+        368
+      ]
+    },
+    {
+      "file": "frame_060.000.png",
+      "timestamp_seconds": 60,
+      "letters": [
+        "LEON",
+        "EVNE",
+        "UTGY",
+        "WROE"
+      ],
+      "dots": [
+        [
+          1,
+          1,
+          2,
+          1
+        ],
+        [
+          1,
+          4,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          3,
+          3
+        ],
+        [
+          3,
+          1,
+          2,
+          1
+        ]
+      ],
+      "score_display": 1577,
+      "source_crop_xywh": [
+        64,
+        200,
+        384,
+        368
+      ]
+    },
+    {
+      "file": "frame_090.000.png",
+      "timestamp_seconds": 90,
+      "letters": [
+        "IESV",
+        "HSNE",
+        "UTGY",
+        "WROE"
+      ],
+      "dots": [
+        [
+          2,
+          1,
+          1,
+          4
+        ],
+        [
+          3,
+          1,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          3,
+          3
+        ],
+        [
+          3,
+          1,
+          2,
+          1
+        ]
+      ],
+      "score_display": 2164,
+      "source_crop_xywh": [
+        64,
+        200,
+        384,
+        368
+      ]
+    }
+  ]
+}
