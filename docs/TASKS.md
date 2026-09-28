@@ -12,7 +12,7 @@
 | Initial version verified | Milestone 5: desktop interface | Real Tk window smoke passed: screenshots, corrections, numbered paths, alternatives, timing, shutdown |
 | Deferred | Milestone 6: live input | Needs a working mirror/capture source and separate latency/accuracy validation |
 | Done | Local source control | Project repository initialized; verified implementation and documentation committed together |
-| Pending account access | GitHub remote/upload | Connector exposes no repositories; no GitHub Git credentials on this Mac. Safari reports JavaScript automation disabled. Local project is ready to push once a repository is authorized |
+| Pending owner connection | GitHub upload | Origin is configured as `https://github.com/michealjosef231-glitch/wordlink-copilot.git`. The connected account is `wilfridd43-coder`; GitHub reports `push: false` for this repository. Connect the repository owner, `michealjosef231-glitch`, to upload the tested local project. No files have been uploaded. |
 
 ## Continue in a new chat
 
