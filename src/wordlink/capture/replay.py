@@ -52,7 +52,7 @@ class ReplaySource:
         self._capture = capture
         self._fps, self._count = fps, count
         self._index = first - 1
-        self._anchor = now - self.start
+        self._anchor = now
 
     def read(self) -> CapturedFrame | None:
         if self._closed:
@@ -62,16 +62,18 @@ class ReplaySource:
             self._open(now)
         capture = self._capture
         assert capture is not None
-        target = max(0, int((now - self._anchor) * self._fps))
+        first = int(self.start * self._fps)
+        # Subtracting start from a large monotonic clock loses precision and
+        # can target the preceding frame immediately after seeking.
+        target = max(first, int((now - self._anchor + self.start) * self._fps))
         if target >= self._count:
             if not self.loop:
                 return None
-            first = int(self.start * self._fps)
             # Restart at the requested start; do not decode previous loops.
             if not capture.set(cv2.CAP_PROP_POS_FRAMES, first):
                 raise SourceUnavailable("Cannot restart recording replay")
             self._index = first - 1
-            self._anchor = now - self.start
+            self._anchor = now
             target = first
         while self._index < target:
             if not capture.grab():

@@ -6,13 +6,37 @@ Verified locally on Intel macOS 12.7.6, Python 3.12.14. Commands and scripts bel
 
 Four independently labeled crops from the supplied recording passed **64/64 letters and 64/64 dot values**, with no uncertainty warnings. Complete synthetic font alphabets and a generic shape metric provide recognition; no screenshot glyphs or test labels are fitted as templates.
 
-The initial suite passed **66 tests** in 8.23 seconds. The current suite, including live controller, native-capture API, replay, and GUI helper regressions, passed **136 tests** with one opt-in native test skipped, in 61.44 seconds while the graphical smoke ran concurrently:
+The initial suite passed **66 tests** in 8.23 seconds. The current suite, including live controller, native-capture API, replay, and GUI helper regressions, passed **143 tests** with one opt-in native test skipped, in **10.39 seconds** on 2026-09-30. The opt-in real native color/orientation test then passed separately in 3.04 seconds:
 
 ```sh
 .venv/bin/python -m pytest -q
 ```
 
 Tests cover eight-neighbor search and tile reuse, vocabulary verdicts and common-word bands, recognition and dots, resized/rotated inputs, incomplete grids, settle detection, CLI output, and recovery from a bad recording frame. GUI helper tests are supplemented by the actual desktop smoke workflow.
+
+## Pre-iPad audit
+
+Two bounded agent reviews identified issues that were reproduced, fixed and reviewed again:
+
+- Cache comparisons previously used the last capture, allowing several small shifts to accumulate without refreshing recognized path coordinates. The cache now compares against its recognized-frame signature. Regressions cover both cumulative geometry and glyph drift while retaining ranking reuse for an unchanged board.
+- Some fractional replay starts returned the preceding frame because of clock subtraction precision. An elapsed-clock anchor and explicit first-frame bound fix opening and looping.
+- Native capture now timestamps before pixel acquisition, so a slow native call cannot label older pixels fresh.
+- Screenshot warnings now hold candidate words and show `REVIEW NEEDED` until an explicit manual solve. The real Tk workflow verifies both the held state and manual confirmation.
+- Starting another live source, unreadable updates and stale expiry clear prior editable entries as well as suggestions. The launcher also checks that its staged entry point exists.
+
+`scripts/smoke_cross_process.py` captures only a purpose-built fixture window in a **different process**, with standard Screen Recording consent. It matched all **64 letters and 64 dot values**, showed numbered paths, cleared suggestions and editable letters on a missing grid, recovered at a different source size, completed three stop/start cycles, and cleared results when minimized before recovering after restore and reconnect. The harness waits for WindowServer to apply the native minimize transition before asserting the disconnected state. No Tk callback errors occurred. Ready times were **2,335 ms** including dictionary loading, then **965, 977 and 1,004 ms** for changed boards. These checks exercise another application's pixel transport without claiming a QuickTime or physical iPad test.
+
+Run the graphical checks separately from performance measurements:
+
+```sh
+PYTHONPATH=src .venv/bin/python scripts/smoke_ui.py
+PYTHONPATH=src .venv/bin/python scripts/smoke_cross_process.py
+WORDLINK_NATIVE_CAPTURE_TEST=1 .venv/bin/python -m pytest tests/test_macos_capture.py::test_native_own_tk_window_pixels_and_closed_window -q -s
+```
+
+The cross-process check requires normal Screen Recording permission. Test output stays in ignored `artifacts/cross_process_smoke.json`; it never captures the desktop, webcam or an arbitrary application.
+
+The updated desktop runtime was restaged and all **477 code/data files** plus `launch.py` matched the checkout byte-for-byte. The real screenshot GUI smoke then passed using that staged Python, source and dictionary, with fixture paths supplied explicitly from the checkout. The Finder-launched app was restarted, its actual window captured and visually inspected, and its new startup log recorded Screen Recording preflight **true**. The desktop log was empty. The installed app is left open for the upcoming device test.
 
 ## Measured performance
 
@@ -58,7 +82,7 @@ The latest native GUI smoke also passed recording replay from a known board, rep
 
 ## Complete normal-speed recording replay
 
-`scripts/validate_live_recording.py` completed the original 130.433 s recording in **130.67 s** of wall time through the same `LiveAssistant` controller used by the GUI. It recognized **13 distinct settled boards**, including all four independently labeled boards; their letters and dots matched **64/64 and 64/64**. It verified every ranked path's letters, dot sum, and tile uniqueness, and asserted that non-ready updates carried no recommendations. The 248 ready updates had a median frame age of **202 ms** and maximum **1,015 ms**, below the configured 1.5 s freshness limit. Unique-board processing measured 198–1,009 ms, with the slowest result on the first board. The recording also produced 244 waiting, 193 reading, six review, and one ended update. These are measurements from this sample and Mac, not guarantees for a different iPad view or game version.
+After the pre-iPad fixes, `scripts/validate_live_recording.py` completed the original 130.433 s recording in **130.56 s** of wall time through the same `LiveAssistant` controller used by the GUI. It recognized **13 distinct settled boards**, including all four independently labeled boards; their letters and dots matched **64/64 and 64/64**. It verified every ranked path's letters, neighboring steps, dot sum, and tile uniqueness, and asserted that non-ready updates carried no recommendations. The 271 ready updates had a median frame age of **203 ms** and maximum **615 ms**, below the configured 1.5 s freshness limit. Unique-board processing measured 193–606 ms, with the slowest result on the first board. The recording also produced 236 waiting, 198 reading, one review, and one ended update. These are measurements from this sample and Mac, not guarantees for a different iPad view or game version.
 
 The previously over-sensitive pixel fingerprint was replaced with tolerant per-tile shape comparison and a semantic OCR check when tile ink changes. A genuinely changed letter or dot still clears old suggestions and waits for a quiet board. Selected-tile variation in the supplied compressed recording no longer prevents the labeled 90 s board from appearing. The real-time replay output is in ignored local `artifacts/live_recording_validation.json`.
 

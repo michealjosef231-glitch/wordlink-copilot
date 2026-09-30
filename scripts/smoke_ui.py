@@ -3,6 +3,8 @@ import json
 import time
 import tkinter as tk
 from pathlib import Path
+from dataclasses import replace
+from unittest.mock import patch
 
 from wordlink.paths import FIXTURES_DIR, ROOT
 from wordlink.ui.app import create_app
@@ -50,13 +52,26 @@ def main():
         app.open_image(FIXTURES_DIR / "boards/frame_090.000.png")
         wait(root, app)
         assert "".join(app.board.letters) == "IESVHSNEUTGYWROE"
+        from wordlink.vision.board import recognize
+        uncertain = replace(recognize(first), warnings=("Tile 1: uncertain letter N",))
+        with patch("wordlink.ui.app.recognize", return_value=uncertain):
+            app.open_image(first)
+            wait(root, app)
+        assert app.status_var.get() == "REVIEW NEEDED"
+        assert "Solve edited board" in app.path_var.get()
+        assert app.board == uncertain.board
+        assert not app.ranked_words and not app.canvas.find_withtag("path")
+        app.solve_corrected()
+        wait(root, app)
+        assert app.last_result.edited and app.ranked_words
         assert not errors, errors
         output = {
             "window": "Tk actual GUI", "best_word": app.best_word_var.get(),
             "candidate_count": len(app.ranked_words), "board": "".join(app.board.letters),
             "callback_errors": errors, "passed": True,
             "checks": ["screenshot worker", "detected board", "numbered paths", "unknown acceptance",
-                       "alternatives", "full/cropped view", "invalid edit rejection", "manual solve", "second screenshot"],
+                       "alternatives", "full/cropped view", "invalid edit rejection", "manual solve", "second screenshot",
+                       "uncertain screenshot holds paths until manual confirmation"],
         }
         destination = ROOT / "artifacts/ui_smoke.json"
         destination.write_text(json.dumps(output, indent=2) + "\n")

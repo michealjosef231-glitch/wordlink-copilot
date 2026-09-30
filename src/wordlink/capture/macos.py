@@ -271,15 +271,17 @@ class MacWindowSource:
             if self._closed:
                 raise SourceUnavailable("This window capture source is closed")
             self._validate_selection()
+            captured_at = time.monotonic()
             try:
                 image = self._native.capture_window(self._window_id)
             except SourceUnavailable:
                 self._validate_selection()
                 raise
             # Reject a closed/minimized/reused window even if it changed during
-            # the native call. Timestamp only after pixels and checks complete.
+            # the native call. Preserve the conservative acquisition timestamp:
+            # a slow capture or metadata check must not make old pixels fresh.
             self._validate_selection()
-            return CapturedFrame(image, time.monotonic())
+            return CapturedFrame(image, captured_at)
 
     def close(self) -> None:
         with self._lock:

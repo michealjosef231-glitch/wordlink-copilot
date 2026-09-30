@@ -443,6 +443,7 @@ class WordLinkApp:
         self.board = None
         self._recognition = None
         self.last_result = None
+        self._clear_entries()
         self._full_screenshot = False
         self.source_var.set(f"Live · {source.label}")
         self.live_source_var.set(f"Starting · {source.label} · Loading local vocabulary…")
@@ -708,6 +709,9 @@ class WordLinkApp:
             if cancellation.is_set():
                 raise CancelledError()
             recognition = recognize(path)
+            if recognition.warnings:
+                return AnalysisOutcome(image, recognition.board, recognition, (),
+                                       (perf_counter() - started) * 1000, 0, self._vocabulary_count)
             trie, policy = self._load_vocabulary(cancellation)
             solve_started = perf_counter()
             ranked = tuple(rank_words(find_words(recognition.board, trie, min_length=3), policy))
@@ -774,8 +778,24 @@ class WordLinkApp:
             self.status_label.configure(fg=YELLOW)
             self.live_source_var.set(f"{self._live_label} · Waiting for a fresh frame…")
             self.warning_var.set("The latest frame is stale. Suggestions are hidden until a fresh, settled board arrives.")
+            self.board = None
+            self._recognition = None
+            self._clear_entries()
             self._clear_suggestions()
         self._poll_id = self.root.after(50, self._poll)
+
+    def _clear_entries(self) -> None:
+        self._updating_entries = True
+        try:
+            for variable in self.letter_vars:
+                variable.set("")
+            for variable in self.dot_vars:
+                variable.set("0")
+            for cell in self.tile_frames:
+                cell.configure(highlightbackground=BORDER)
+            self.review_var.set("Waiting for a readable board · letter / dot count")
+        finally:
+            self._updating_entries = False
 
     def _fill_entries(self, board: Board, recognition: Recognition | None) -> None:
         self._updating_entries = True
@@ -833,6 +853,8 @@ class WordLinkApp:
             self._recognition = recognition
             if self.board is not None:
                 self._fill_entries(self.board, recognition)
+            else:
+                self._clear_entries()
             self._clear_suggestions()
         if state in ("permission", "disconnected", "ended", "error", "stopped"):
             controller, self._live_controller = self._live_controller, None
@@ -861,9 +883,12 @@ class WordLinkApp:
             self.status_label.configure(fg=YELLOW)
             self.warning_var.set(f"Could not complete analysis: {outcome.error}\n\nYou can enter all 16 letters and dot counts below and solve the board manually.")
         else:
-            self.status_var.set("ANALYZED")
-            self.status_label.configure(fg=GREEN)
             warnings = list(outcome.recognition.warnings) if outcome.recognition else []
+            needs_review = bool(warnings) and not outcome.edited
+            self.status_var.set("REVIEW NEEDED" if needs_review else "ANALYZED")
+            self.status_label.configure(fg=YELLOW if needs_review else GREEN)
+            if needs_review:
+                warnings.insert(0, "Suggestions are held until you review the detected entries and choose Solve edited board.")
             if outcome.edited:
                 self.review_var.set("Edited entries · letter / dot count")
                 warnings.insert(0, "Using your edited letters and dot counts. Recognition confidence does not apply to these entries.")
@@ -893,8 +918,13 @@ class WordLinkApp:
             self.utility_var.set("—")
             self.dot_total_var.set("—")
             self.tracing_var.set("—")
-            self.path_var.set("No candidates yet." if self.board is None else "No matching words in the local vocabulary. Review the board entries.")
-            self.empty_alternatives.configure(text="Candidate words will appear here." if self.board is None else "No alternative candidates found.")
+            held_for_review = bool(self._recognition and self._recognition.warnings)
+            self.path_var.set("Review the detected entries and choose Solve edited board to show candidates." if held_for_review
+                              else "No candidates yet." if self.board is None
+                              else "No matching words in the local vocabulary. Review the board entries.")
+            self.empty_alternatives.configure(text="Suggestions are held for review." if held_for_review
+                                             else "Candidate words will appear here." if self.board is None
+                                             else "No alternative candidates found.")
             self.empty_alternatives.grid(row=0, column=0, sticky="ew", pady=(4, 12))
             return
         for row, candidate in enumerate(self.ranked_words[1:4]):

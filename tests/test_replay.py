@@ -48,6 +48,21 @@ def test_replay_loop_restarts_at_requested_position(recording, monkeypatch):
         source.close()
 
 
+@pytest.mark.parametrize("start", [.1, .3, .6, .8])
+def test_fractional_start_never_returns_the_preceding_frame(recording, monkeypatch, start):
+    now = [100.0]
+    monkeypatch.setattr(replay, "perf_counter", lambda: now[0])
+    source = replay.ReplaySource(recording, start=start, loop=True)
+    try:
+        for _ in range(2):
+            frame = source.read()
+            assert frame.media_time == pytest.approx(start)
+            assert frame.image.mean() == pytest.approx(start * 100, abs=3)
+            now[0] += 10
+    finally:
+        source.close()
+
+
 def test_replay_close_and_invalid_sources(recording, tmp_path):
     with pytest.raises(ValueError, match="finite"):
         replay.ReplaySource(recording, start=float("nan"))

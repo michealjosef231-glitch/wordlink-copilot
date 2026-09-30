@@ -251,6 +251,7 @@ class LiveAssistant:
     def _run(self) -> None:
         detector = SettleDetector(self.config.quiet_frames, self.config.threshold)
         fingerprint: _ContentSignature | bytes | None = None
+        cached_fingerprint: _ContentSignature | bytes | None = None
         cached_read: Recognition | None = None
         cached_ranked: tuple[RankedWord, ...] = ()
         solved_identity: tuple[tuple[str, ...], tuple[int, ...]] | None = None
@@ -258,9 +259,10 @@ class LiveAssistant:
         interval = 1 / self.config.sample_fps
 
         def invalidate() -> None:
-            nonlocal detector, fingerprint, cached_read, cached_ranked
+            nonlocal detector, fingerprint, cached_fingerprint, cached_read, cached_ranked
             detector = SettleDetector(self.config.quiet_frames, self.config.threshold)
             fingerprint = None
+            cached_fingerprint = None
             cached_read = None
             cached_ranked = ()
 
@@ -294,8 +296,12 @@ class LiveAssistant:
                     self._publish(LiveUpdate("review", f"Tile content needs review: {exc}", frame))
                     self._stop.wait(max(0, interval - (perf_counter() - started)))
                     continue
-                content_changed = fingerprint is not None and not _same_content(fingerprint, current_fingerprint)
-                structural_change = fingerprint is not None and _structure_changed(fingerprint, current_fingerprint)
+                # Cache tolerances must be measured from the recognized frame.
+                # Comparing only adjacent captures lets small changes accumulate
+                # indefinitely while old letters and path coordinates survive.
+                baseline = cached_fingerprint if cached_read is not None else fingerprint
+                content_changed = baseline is not None and not _same_content(baseline, current_fingerprint)
+                structural_change = baseline is not None and _structure_changed(baseline, current_fingerprint)
                 previous_identity = None
                 if structural_change:
                     invalidate()
@@ -306,12 +312,14 @@ class LiveAssistant:
                     # every codec/selection fluctuation.
                     previous_identity = (cached_read.board.letters, cached_read.board.dots)
                     cached_read = None
+                    cached_fingerprint = None
                     cached_ranked = ()
                     self._publish(LiveUpdate("reading", "Verifying changed tile ink", frame))
                 fingerprint = current_fingerprint
                 settled_now = detector.update(crop)
                 if detector.quiet_count < self.config.quiet_frames:
                     cached_read = None
+                    cached_fingerprint = None
                     cached_ranked = ()
                     self._publish(LiveUpdate("waiting", "Board is moving; waiting for quiet frames", frame))
                 elif settled_now or cached_read is None:
@@ -341,6 +349,7 @@ class LiveAssistant:
                         self._stop.wait(max(0, interval - (perf_counter() - started)))
                         continue
                     cached_read = read
+                    cached_fingerprint = current_fingerprint
                     solve_ms = 0.0
                     if read.warnings:
                         cached_ranked = ()

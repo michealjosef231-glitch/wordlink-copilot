@@ -455,6 +455,77 @@ def test_content_signature_tolerates_codec_noise_but_catches_ink_and_dot_changes
     assert not live._same_content(baseline, live._ContentSignature(resized_boxes, glyphs, (1,) * 16, (False,) * 16))
 
 
+def test_gradual_board_translation_refreshes_cached_path_coordinates(monkeypatch):
+    def boxes_for(image):
+        shift = int(image[0, 0, 0])
+        return tuple((x + shift, y, width, height) for x, y, width, height in BOXES)
+
+    def recognition(image):
+        return Recognition(Board(LETTERS, (1,) * 16, boxes_for(image)), (), 1.0)
+
+    harness = Harness(monkeypatch, recognition=recognition)
+    monkeypatch.setattr(live, "detect_tiles", boxes_for)
+
+    def translated(shift):
+        image = np.full((190, 240, 3), (140, 65, 20), dtype=np.uint8)
+        image[:, shift:shift + 210] = board_image()
+        image[0, 0, 0] = shift  # Geometry marker outside the actual tile crop.
+        return image
+
+    try:
+        baseline = harness.settle(translated(0))
+        previous = live._content_fingerprint(baseline.frame.image, BOXES)
+        for shift in range(3, 25, 3):
+            image = translated(shift)
+            current = live._content_fingerprint(image, boxes_for(image))
+            assert live._same_content(previous, current)  # Adjacent frames look equivalent.
+            previous = current
+            harness.source.push(image, media_time=shift)
+            observed = []
+
+            def got_frame():
+                update = harness.assistant.poll()
+                if update and update.frame and update.frame.media_time == shift:
+                    observed.append(update)
+                    return update.state in ("ready", "waiting")
+                return False
+
+            wait_until(got_frame)
+            update = observed[-1]
+            if update.state == "ready":
+                cached_x = update.recognition.board.boxes[0][0]
+                assert abs(cached_x - (BOXES[0][0] + shift)) <= 3
+            else:
+                assert not update.ranked_words
+        assert harness.recognition_calls >= 3
+        assert harness.solve_calls == 1  # Geometry updates do not change legal words.
+    finally:
+        harness.finish()
+
+
+def test_gradual_glyph_changes_are_compared_with_the_recognized_frame(monkeypatch):
+    def signature(image, boxes):
+        glyphs = [np.zeros((64, 64), dtype=np.uint8) for _ in range(16)]
+        glyphs[0].flat[:int(image[0, 0, 0])] = 255
+        return live._ContentSignature(boxes, tuple(glyphs), (1,) * 16, (False,) * 16)
+
+    harness = Harness(monkeypatch)
+    monkeypatch.setattr(live, "_content_fingerprint", signature)
+    try:
+        baseline = board_image()
+        baseline[0, 0, 0] = 0
+        harness.settle(baseline)
+        for amount in (20, 40, 60, 80, 100):
+            image = baseline.copy()
+            image[0, 0, 0] = amount
+            harness.source.push(image, media_time=amount)
+            wait_update(harness.assistant, "ready")
+        # Each step is under 1%, but total glyph drift exceeds the 2% tolerance.
+        assert harness.recognition_calls == 2
+    finally:
+        harness.finish()
+
+
 def test_selected_tile_glyph_variation_rechecks_same_board_without_losing_ready(monkeypatch):
     harness = Harness(monkeypatch)
     try:

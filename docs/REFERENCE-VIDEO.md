@@ -15,6 +15,8 @@ Source: the user's `ScreenRecording_09-28-2026 20-18-10_1(1).mp4`. Duration 130.
 
 The four annotated test crops are from 10, 40, 60, and 90 seconds. The lead independently read letters and dots from the full frames before comparing predictions. Generated alphabet masks come from locally installed fonts, not from those labels. Crops exclude unrelated interface and notifications.
 
+After the 2026-09-30 pre-iPad audit, the live controller again replayed the entire recording at normal speed and matched all four labeled board identities. That verification tests capture/settling/recognition, without establishing additional scoring or dictionary facts. See `VALIDATION.md` for measured timings and scope.
+
 Not established: the game's full accepted dictionary, exact scoring formula, the minimum accepted word length, whether green input text guarantees acceptance, or precise acceptance/replacement timing. Add observations with frame times and before/after evidence before changing these facts.
 
 For score calibration, record a stable board, exact selected path, dot values, displayed score before submission and after the animation, and any active multiplier. Do not infer a scoring formula from cumulative scores alone.

@@ -16,7 +16,7 @@ After the one-time runtime staging command above, double-click **Word Link Copil
 
 To connect an iPad, use a USB cable and QuickTime Player's **File > New Movie Recording**, then choose the iPad as the camera source. Select that QuickTime window in the assistant. See [live setup](docs/LIVE-SETUP.md) for permission and troubleshooting steps. You can choose **Replay recording** to exercise automatic reading without a device.
 
-Choose **Open screenshot** to review a saved image. Edit a tile and choose **Solve edited board** to correct a read; editing pauses live capture. The interface shows alternatives, unknown game acceptance, and local timing. `Launch Word Link.command` remains an alternative launcher.
+Choose **Open screenshot** to review a saved image. Uncertain reads hold suggestions until you review the entries and choose **Solve edited board**. Edit a tile and choose **Solve edited board** to correct a read; editing pauses live capture. The interface shows alternatives, unknown game acceptance, and local timing. `Launch Word Link.command` remains an alternative launcher.
 
 ## Screenshot and recording commands
 

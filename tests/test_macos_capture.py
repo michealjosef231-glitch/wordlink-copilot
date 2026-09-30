@@ -101,7 +101,15 @@ def test_own_process_window_can_capture_without_global_consent(native, monkeypat
     source = macos.MacWindowSource(91, "Test mirror")
     assert native.captured == []
     frame = source.read()
-    assert frame.captured_at == 20.0
+    assert frame.captured_at == 10.0
+    # Even though the native call returned at 20, the acquisition must remain
+    # stale to the live controller instead of resetting its freshness clock.
+    from wordlink.capture import live
+    from wordlink.solver.trie import Trie
+    from wordlink.vocabulary.policy import VocabularyPolicy
+    monkeypatch.setattr(live, "monotonic", lambda: clock["now"])
+    assistant = live.LiveAssistant(source, Trie([]), VocabularyPolicy())
+    assert not assistant._fresh(frame)
     assert frame.media_time is None
     assert source.label == "Test mirror"
     np.testing.assert_array_equal(frame.image[0, 0], [7, 35, 210])

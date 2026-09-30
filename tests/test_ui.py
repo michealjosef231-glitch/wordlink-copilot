@@ -64,3 +64,26 @@ def test_live_suggestions_expire_even_without_a_worker_update():
 @pytest.mark.parametrize("captured_at, now", [(None, 100.0), (101.0, 100.0), (float("nan"), 100.0), (100.0, float("inf"))])
 def test_missing_or_invalid_live_frame_time_hides_suggestions(captured_at, now):
     assert not live_ready_is_fresh("ready", captured_at, now)
+
+
+def test_uncertain_screenshot_holds_words_until_explicit_manual_solve(monkeypatch):
+    from dataclasses import replace
+    from threading import Event
+    import wordlink.ui.app as ui
+    from wordlink.paths import FIXTURES_DIR
+    from wordlink.solver.trie import Trie
+    from wordlink.vocabulary.policy import VocabularyPolicy
+    from wordlink.vision.board import recognize
+
+    path = FIXTURES_DIR / "boards/frame_010.000.png"
+    uncertain = replace(recognize(path), warnings=("Tile 1: uncertain letter N",))
+    monkeypatch.setattr(ui, "recognize", lambda _: uncertain)
+    app = object.__new__(ui.WordLinkApp)
+    app._vocabulary_count = 3
+    app._trie = Trie(["TRAIN", "NOR", "NOT"])
+    app._policy = VocabularyPolicy()
+    outcome = app._analyze_screenshot(path, Event())
+    assert outcome.board == uncertain.board and outcome.recognition.warnings
+    assert not outcome.ranked_words and outcome.error is None
+    confirmed = app._solve_board(outcome.board, outcome.image, Event())
+    assert confirmed.edited and confirmed.ranked_words and confirmed.error is None
