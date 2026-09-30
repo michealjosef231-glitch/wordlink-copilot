@@ -36,7 +36,7 @@ WORDLINK_NATIVE_CAPTURE_TEST=1 .venv/bin/python -m pytest tests/test_macos_captu
 
 The cross-process check requires normal Screen Recording permission. Test output stays in ignored `artifacts/cross_process_smoke.json`; it never captures the desktop, webcam or an arbitrary application.
 
-The updated desktop runtime was restaged and all **477 code/data files** plus `launch.py` matched the checkout byte-for-byte. The real screenshot GUI smoke then passed using that staged Python, source and dictionary, with fixture paths supplied explicitly from the checkout. The Finder-launched app was restarted, its actual window captured and visually inspected, and its new startup log recorded Screen Recording preflight **true**. The desktop log was empty. The installed app is left open for the upcoming device test.
+The updated desktop runtime was restaged and all **477 code/data files** plus `launch.py` matched the checkout byte-for-byte. The real screenshot GUI smoke then passed using that staged Python, source and dictionary, with fixture paths supplied explicitly from the checkout. The Finder-launched app was restarted, its actual window captured and visually inspected, and its new startup log recorded Screen Recording preflight **true**. The desktop log was empty. This staged app was then used for the first physical iPad test below.
 
 ## Measured performance
 
@@ -86,8 +86,25 @@ After the pre-iPad fixes, `scripts/validate_live_recording.py` completed the ori
 
 The previously over-sensitive pixel fingerprint was replaced with tolerant per-tile shape comparison and a semantic OCR check when tile ink changes. A genuinely changed letter or dot still clears old suggestions and waits for a quiet board. Selected-tile variation in the supplied compressed recording no longer prevents the labeled 90 s board from appearing. The real-time replay output is in ignored local `artifacts/live_recording_validation.json`.
 
-## Physical iPad boundary
+## First physical iPad board test
 
-On 2026-09-30, macOS USB enumeration briefly detected an iPad (Apple product ID `0x12ab`). QuickTime Player's Camera menu listed and selected “iPad de pop’s”; its preview became portrait at 1200 x 1718 native video dimensions, with no recording started. Initially Screen Recording preflight was **false** for the app, its standard permission request returned false, and selecting QuickTime correctly returned `CapturePermissionError`. After standard macOS consent and a Finder-app restart, the app's own preflight logged **true**. A later USB check showed **no connected iPad** and the QuickTime preview had shrunk. No real iPad pixels or game board have yet been validated through Copilot.
+On 2026-09-30, macOS USB enumeration detected an iPad (Apple product ID `0x12ab`) and QuickTime Player selected “iPad de pop’s” as its Camera source. The installed app had ordinary Screen Recording consent, with preflight **true**. Earlier, before that consent and a Finder-app restart, selecting another application's window correctly returned `CapturePermissionError`.
 
-Still unresolved: actual game score calibration, accepted/rejected vocabulary evidence, fonts or recordings beyond this sample, and real iPad input verification. Commonness and dot/gesture utility are estimates; no recommendation is falsely marked game-confirmed.
+The initial QuickTime preview was black both in captured pixels and according to the user. After a fresh, unrecorded preview, the user reported that the picture was visible. This observed recovery does not establish why the initial preview was black.
+
+CoreGraphics then captured the actual QuickTime window at **756 x 1080** pixels. Its board was independently labeled before comparison:
+
+| Row | Letters | Dot counts |
+| --- | --- | --- |
+| 1 | P W R F | 3, 3, 1, 3 |
+| 2 | I A S I | 2, 2, 1, 2 |
+| 3 | T N G E | 1, 1, 3, 1 |
+| 4 | A P E N | 2, 3, 1, 1 |
+
+The Finder-launched installed app selected that QuickTime window through its GUI and reached **READY**. All **16 letters and 16 dot counts** matched, with no recognition warnings. It displayed **PAWING**, the one-based path **1 → 6 → 2 → 5 → 10 → 11**, and dot sum **14**. There were **310 ranked candidates**; their game acceptance remains unknown.
+
+A separate live-controller check of the same physical source ran for **25.02 seconds**, producing **50 ready**, six waiting and two reading updates. Maximum frame age was **383.5 ms**, mean frame age **165.8 ms**, and maximum computation time **368.3 ms**. Sixteen compared pixel pairs differed, while the recognized board stayed unchanged. Every returned candidate path was legal. Only this **one board** was independently annotated; no real gameplay board transition, vocabulary acceptance or score gain was verified.
+
+The USB connection later dropped. Both `system_profiler` and `ioreg` reported no iPad; QuickTime reported zero natural video dimensions and showed a black **350 x 240** preview. The installed app correctly showed **WAITING**, cleared recommendations and left editable letters empty. This verifies withholding recommendations when the source no longer contains a readable board. It does not establish successful device reconnection or a sustained physical session.
+
+Device screenshots and diagnostics remain in ignored local `artifacts/`; no new private screenshots or fixtures were added to Git. The last verified physical state was disconnected. Pending: restore connectivity, verify sustained mirroring and reconnection, observe real gameplay board changes, annotate additional physical boards, and collect score/vocabulary evidence. Commonness and dot/gesture utility remain estimates; no recommendation is marked game-confirmed without evidence.

@@ -20,3 +20,9 @@ After the 2026-09-30 pre-iPad audit, the live controller again replayed the enti
 Not established: the game's full accepted dictionary, exact scoring formula, the minimum accepted word length, whether green input text guarantees acceptance, or precise acceptance/replacement timing. Add observations with frame times and before/after evidence before changing these facts.
 
 For score calibration, record a stable board, exact selected path, dot values, displayed score before submission and after the animation, and any active multiplier. Do not infer a scoring formula from cumulative scores alone.
+
+## Separate physical iPad observation, 2026-09-30
+
+This observation is from a live QuickTime iPad preview, not a frame from the supplied recording. One independently labeled board was `PWRF / IASI / TNGE / APEN`, with dot rows `3,3,1,3 / 2,2,1,2 / 1,1,3,1 / 2,3,1,1`. The installed app matched all letters and dots without warnings and displayed PAWING on tiles `1 → 6 → 2 → 5 → 10 → 11`, totaling 14 dots. No submission or game acceptance was verified, and no score formula can be inferred from that suggestion.
+
+The physical connection later dropped and the app withheld recommendations. Continuous connection, reconnect recovery and actual gameplay board changes remain unverified. Private device screenshots and diagnostics are excluded from Git. Full measurements and the last observed device state are in `VALIDATION.md`.

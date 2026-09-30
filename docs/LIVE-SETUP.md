@@ -10,6 +10,8 @@
 
 QuickTime discovers the USB device. The assistant discovers Mac windows and reads the selected window's pixels; it does not directly pair with the iPad. Apple's [Monterey QuickTime guide](https://support.apple.com/en-ie/guide/quicktime-player/qtp356b55534/10.5/mac/12.0) documents the connected-device source menu. Actual device availability depends on the USB connection, device trust, and QuickTime support.
 
+On 2026-09-30, the installed assistant successfully read one physical iPad board through the “iPad de pop’s” QuickTime source, matching all 16 letters and dot counts. The USB connection later dropped and the assistant cleared its results. Sustained connection, reconnection and real gameplay board changes remain pending; see [validation](VALIDATION.md) for the observed evidence. A previously successful read does not mean the device is currently connected.
+
 ## Allow screen capture
 
 Use **Capture help** in the assistant to request macOS Screen Recording access and open its settings. On Monterey, the route is **System Preferences > Security & Privacy > Privacy > Screen Recording**. Enable the application macOS names in the request, then quit and reopen it if macOS requires a restart. Running from an editor or a terminal can give that host application the permission identity instead of the launcher.
@@ -39,8 +41,10 @@ Replay validates the application pipeline. A native capture test validates the p
 ## Troubleshooting
 
 - **iPad absent from QuickTime:** use a data-capable cable, unlock and trust the computer, and reconnect. The assistant's window list cannot repair a missing USB device.
+- **QuickTime preview is black:** first check the picture in QuickTime itself. During the first device test the user also saw a black preview; a fresh, unrecorded preview subsequently showed the picture. Check that the iPad is unlocked, trusted and still connected, then reselect its Camera source or reopen the preview. The observed recovery did not identify a root cause. Copilot needs visible game pixels before it can read a board.
 - **QuickTime absent from the picker:** keep its preview window open and visible, then choose Refresh.
 - **Permission needed:** use Capture help, allow Screen Recording for the named app, restart it, and refresh the list.
 - **Waiting for board:** show the entire 4x4 grid at a readable size. Selected cells, animation, an unfamiliar font, or an incomplete grid may prevent a reliable read.
 - **Review needed:** stop reading, correct the displayed letters and dots, and solve the edited board. Confidence scores are estimates.
 - **Disconnected:** reopen/unminimize the selected mirror window and start a new session. Closing the source window invalidates its selection.
+- **Waiting after a USB drop:** restore the physical connection and confirm the iPad picture in QuickTime. A preview window can remain open while its device has disappeared, so Copilot may show Waiting rather than Disconnected. Choose Refresh and deliberately select the current mirror window; start a fresh session if it stopped. Recommendations and editable letters should remain cleared until a readable board returns.
