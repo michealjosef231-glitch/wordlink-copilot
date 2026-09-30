@@ -2,7 +2,7 @@
 
 import pytest
 
-from wordlink.ui.app import crop_bounds, parse_board_entries
+from wordlink.ui.app import crop_bounds, live_ready_is_fresh, parse_board_entries
 
 
 def test_manual_entries_normalize_letters_and_preserve_screenshot_boxes():
@@ -48,3 +48,19 @@ def test_board_crop_keeps_all_tile_centers():
 
 def test_missing_boxes_keep_the_full_source_image():
     assert crop_bounds((1080, 1920), ()) == (0, 0, 1080, 1920)
+
+
+@pytest.mark.parametrize("state", ["waiting", "reading", "review", "permission", "disconnected", "ended", "error", "stopped"])
+def test_only_ready_live_frames_allow_visible_suggestions(state):
+    assert not live_ready_is_fresh(state, captured_at=100.0, now=100.1)
+
+
+def test_live_suggestions_expire_even_without_a_worker_update():
+    assert live_ready_is_fresh("ready", captured_at=100.0, now=100.0)
+    assert live_ready_is_fresh("ready", captured_at=100.0, now=101.5)
+    assert not live_ready_is_fresh("ready", captured_at=100.0, now=101.501)
+
+
+@pytest.mark.parametrize("captured_at, now", [(None, 100.0), (101.0, 100.0), (float("nan"), 100.0), (100.0, float("inf"))])
+def test_missing_or_invalid_live_frame_time_hides_suggestions(captured_at, now):
+    assert not live_ready_is_fresh("ready", captured_at, now)

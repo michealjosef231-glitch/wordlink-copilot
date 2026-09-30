@@ -10,6 +10,7 @@ from time import perf_counter
 import cv2
 
 from wordlink.model import Board, FoundWord
+from wordlink.capture.sources import CaptureError
 from wordlink.overlay import save_overlay
 from wordlink.paths import DATA_DIR
 from wordlink.solver.ranking import rank_words
@@ -60,7 +61,7 @@ def write_json(path: Path | None, result: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline Word Link screenshot and recording analyzer")
+    parser = argparse.ArgumentParser(description="Local Word Link live assistant and screenshot analyzer")
     sub = parser.add_subparsers(dest="command", required=True)
     screenshot = sub.add_parser("screenshot", help="Read and solve one screenshot")
     screenshot.add_argument("image", type=Path)
@@ -80,13 +81,45 @@ def main(argv: list[str] | None = None) -> int:
     video.add_argument("--sample-fps", type=float, default=4)
     video.add_argument("--start", type=float, default=0)
     video.add_argument("--stop", type=float)
-    ui = sub.add_parser("ui", help="Open the desktop screenshot analyzer")
+    ui = sub.add_parser("ui", help="Open the desktop assistant")
     ui.add_argument("image", type=Path, nargs="?")
+    windows = sub.add_parser("windows", help="List available Mac mirror windows")
+    windows.add_argument("--json", action="store_true")
+    live = sub.add_parser("live", help="Open automatic reading of a mirror window or local replay")
+    source = live.add_mutually_exclusive_group()
+    source.add_argument("--window-id", type=int)
+    source.add_argument("--recording", type=Path)
+    live.add_argument("--start", type=float, default=0, help="Recording replay start in seconds")
+    live.add_argument("--loop", action="store_true", help="Repeat the recording replay")
     args = parser.parse_args(argv)
     try:
-        if args.command == "ui":
+        if args.command == "windows":
+            from wordlink.capture.macos import list_windows, screen_recording_allowed
+            available = list_windows()
+            if args.json:
+                print(json.dumps({"screen_recording_allowed": screen_recording_allowed(),
+                                  "windows": [asdict(window) for window in available]}, indent=2))
+            else:
+                for window in available:
+                    print(f"{window.window_id}\t{window.app}\t{window.title}")
+                if not screen_recording_allowed():
+                    print("Screen Recording permission is needed to read another app's window.")
+            return 0
+        if args.command in {"ui", "live"}:
             from wordlink.ui.app import launch
-            launch(args.image)
+            if args.command == "ui":
+                launch(args.image)
+            else:
+                selected = None
+                if args.recording:
+                    from wordlink.capture.replay import ReplaySource
+                    selected = ReplaySource(args.recording, start=args.start, loop=args.loop)
+                elif args.start != 0 or args.loop:
+                    raise ValueError("--start and --loop require --recording")
+                elif args.window_id is not None:
+                    from wordlink.capture.macos import MacWindowSource
+                    selected = MacWindowSource(args.window_id)
+                launch(live_source=selected)
             return 0
         start = perf_counter()
         trie = dictionary_trie()
@@ -121,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         write_json(args.json, result)
         print_summary(result, max(1, args.top))
         return 0
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, CaptureError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 

@@ -10,7 +10,7 @@
 | Foundation done | Milestone 3: vocabulary engine | ENABLE and common-word subset, evidence-ledger policy, A/B/C bands. Confirmed/rejected ledgers remain empty |
 | Waiting for observations | Milestone 4: score model | Proxy ranking exists; exact scoring requires before/after score observations and selected paths |
 | Initial version verified | Milestone 5: desktop interface | Real Tk window smoke passed: screenshots, corrections, numbered paths, alternatives, timing, shutdown |
-| Deferred | Milestone 6: live input | Needs a working mirror/capture source and separate latency/accuracy validation |
+| Local capture and replay verified; physical iPad pending | Milestone 6: live input | Selected-window CoreGraphics capture, settled-board reader, and Tk paths cleared/updated correctly on four real native window tests. A complete 130.67 s real-time replay produced 13 unique boards and matched all four independently labeled boards (64 letters and 64 dots). The Finder app launches and its Screen Recording preflight now passes. The iPad is currently disconnected, so actual QuickTime game pixels remain untested. |
 | Done | Local source control | Project repository initialized; verified implementation and documentation committed together |
 | Done | GitHub upload and project write access | Published to [michealjosef231-glitch/wordlink-copilot](https://github.com/michealjosef231-glitch/wordlink-copilot). This Mac uses a dedicated read/write deploy key with repository-local SSH configuration; SSH authentication and `git push -u origin main` succeeded. The original video, local environment, and private key are excluded from Git. |
 
@@ -18,8 +18,8 @@
 
 Read `PROJECT.md` and `AGENTS.md`. Choose one small task, state the owned paths, inspect relevant fixtures, run targeted tests, and update this table with measured results. The lead coordinates agents and integrates their work.
 
-Suggested next engineering task: annotate additional held-out settled frames and compare their full letter/dot arrays against video output. Then collect explicit score changes and vocabulary verdicts from permitted recording/practice evidence. Keep the scoring profile uncalibrated until that evidence exists.
+Next, connect and unlock the iPad, select it in QuickTime, and read a real mirrored board through the now-authorized app. Then annotate additional held-out settled frames and collect explicit score changes and vocabulary verdicts from permitted recording/practice evidence. Keep the scoring profile uncalibrated until that evidence exists.
 
 ## Team work completed
 
-The vision agent owned detection, glyph/dot recognition and template tests; the solver agent owned trie/DFS, ranking and vocabulary; the interface agent owned Tkinter and UI helpers. The lead integrated recording processing, CLI, fixtures, validation, source control and documentation. The superseded letter-circle prototype is archived outside the active workspace.
+The vision agent owned detection, glyph/dot recognition and template tests; the solver agent owned trie/DFS, ranking and vocabulary; the interface agent owned Tkinter and UI helpers. Later agents implemented native selected-window capture, the live controller, and GUI controls while the lead integrated replay, CLI, fixtures, validation, source control and documentation. The superseded letter-circle prototype is archived outside the active workspace.

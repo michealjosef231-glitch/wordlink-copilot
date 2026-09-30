@@ -1,0 +1,46 @@
+# Live assistant setup on this Mac
+
+## Connect the iPad
+
+1. Connect the unlocked iPad to the iMac with a USB data cable. Accept **Trust This Computer** on the iPad if asked.
+2. Open **QuickTime Player** and choose **File > New Movie Recording**.
+3. Open the options menu next to the recording button. Under **Camera**, choose the connected iPad.
+4. Open Word Link on the iPad and keep the mirrored board visible. A recording file is unnecessary; the assistant reads the preview window.
+5. Open **Word Link Copilot.app**, choose **Refresh**, select the QuickTime window, and choose **Start live**.
+
+QuickTime discovers the USB device. The assistant discovers Mac windows and reads the selected window's pixels; it does not directly pair with the iPad. Apple's [Monterey QuickTime guide](https://support.apple.com/en-ie/guide/quicktime-player/qtp356b55534/10.5/mac/12.0) documents the connected-device source menu. Actual device availability depends on the USB connection, device trust, and QuickTime support.
+
+## Allow screen capture
+
+Use **Capture help** in the assistant to request macOS Screen Recording access and open its settings. On Monterey, the route is **System Preferences > Security & Privacy > Privacy > Screen Recording**. Enable the application macOS names in the request, then quit and reopen it if macOS requires a restart. Running from an editor or a terminal can give that host application the permission identity instead of the launcher.
+
+Screen Recording access permits the operating system to supply another application's pixels. The assistant requests only the selected window. It does not need microphone access, an API key, or game-control permission. Apple's [Monterey screen recording guide](https://support.apple.com/en-qa/guide/mac-help/mchld6aa7d23/12.0/mac/12.0) explains the privacy setting.
+
+## Reading behavior
+
+The assistant samples at 4 frames per second and waits for three quiet board frames before recognizing. A confident read updates the word candidates and numbered path. A single worker avoids building a queue of old frames. A changing, highlighted, missing, uncertain, or stale board clears recommendations. The interface independently clears a displayed result if fresh input stops arriving for 1.5 seconds.
+
+Choose **Stop** to pause reading. Opening a screenshot or editing a letter/dot count also stops live capture so a new frame cannot overwrite the correction. Choose **Start live** again to start a fresh selected-window session.
+
+Dictionary acceptance is unknown unless observed and recorded; dot-weight and gesture utility remain uncalibrated ranking estimates. This version assists the player with suggestions and paths. The player performs the gestures.
+
+## Test without a connected device
+
+Choose **Replay recording** and select the original supplied MP4. Playback is paced in real time; if processing takes longer, the source skips to the current frame instead of accumulating old frames. The same settle/recognize/search/display loop runs for replay and native window capture.
+
+For a replay starting at a known board:
+
+```sh
+.venv/bin/wordlink live --recording fixtures/videos/reference.mp4 --start 10
+```
+
+Replay validates the application pipeline. A native capture test validates the pixel transport. Neither proves the physical iPad has been connected successfully; see [validation](VALIDATION.md) for precisely what was tested.
+
+## Troubleshooting
+
+- **iPad absent from QuickTime:** use a data-capable cable, unlock and trust the computer, and reconnect. The assistant's window list cannot repair a missing USB device.
+- **QuickTime absent from the picker:** keep its preview window open and visible, then choose Refresh.
+- **Permission needed:** use Capture help, allow Screen Recording for the named app, restart it, and refresh the list.
+- **Waiting for board:** show the entire 4x4 grid at a readable size. Selected cells, animation, an unfamiliar font, or an incomplete grid may prevent a reliable read.
+- **Review needed:** stop reading, correct the displayed letters and dots, and solve the edited board. Confidence scores are estimates.
+- **Disconnected:** reopen/unminimize the selected mirror window and start a new session. Closing the source window invalidates its selection.

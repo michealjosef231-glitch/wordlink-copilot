@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "wordlink-copilot"
 version = "0.1.0"
-description = "An offline screenshot and recording analyzer for 4x4 word boards"
+description = "A local live screen assistant and screenshot analyzer for 4x4 word boards"
 requires-python = ">=3.12"
 dependencies = ["numpy>=2.0,<3", "opencv-python-headless==4.10.0.84", "Pillow>=10,<13"]
 

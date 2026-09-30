@@ -1,0 +1,10 @@
+#!/bin/zsh
+runtime_dir="$HOME/Library/Application Support/WordLinkCopilot"
+if [[ ! -x "$runtime_dir/.venv/bin/python" || ! -f "$runtime_dir/src/wordlink/cli.py" || ! -f "$runtime_dir/data/words.txt" ]]; then
+    /usr/bin/osascript -e 'display alert "Word Link Copilot needs its local runtime" message "Run Word Link Copilot.app/Contents/Resources/stage-runtime.command once from the project folder, then reopen the app." as critical'
+    exit 1
+fi
+mkdir -p "$HOME/Library/Logs/WordLinkCopilot"
+export PYTHONPATH="$runtime_dir/src"
+cd / || exit 1
+exec "$runtime_dir/.venv/bin/python" "$runtime_dir/launch.py" > "$HOME/Library/Logs/WordLinkCopilot/desktop.log" 2>&1
