@@ -25,3 +25,7 @@ At this update, the revised installed app was left live and showing the known bo
 ## Team work completed
 
 The vision agent owned detection, glyph/dot recognition and template tests; the solver agent owned trie/DFS, ranking and vocabulary; the interface agent owned Tkinter and UI helpers. Later agents implemented native selected-window capture, the live controller, and GUI controls while the lead integrated replay, CLI, fixtures, validation, source control and documentation. The superseded letter-circle prototype is archived outside the active workspace.
+
+## Live session continuation, 2026-10-01
+
+On 2026-10-01, QuickTime had replaced the selected preview with window 493. The running installed app (window 349) was manually refreshed and switched to that new selected source. It reached READY and displayed COPY with path 10 → 6 → 11 → 12 in Play view. A later GUI capture showed the game results menu; Copilot correctly changed to CHECKING and cleared the word and path because no 4x4 board was present. It was left actively watching the selected preview, ready for the player to open another round. This verifies manual source reselection and a board-to-menu transition; it does not add an independently annotated full board, establish game acceptance or score calibration, or prove automatic recovery after window replacement. Private captures remain ignored local artifacts.
