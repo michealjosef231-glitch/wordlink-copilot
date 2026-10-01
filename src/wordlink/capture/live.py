@@ -303,6 +303,7 @@ class LiveAssistant:
                 content_changed = baseline is not None and not _same_content(baseline, current_fingerprint)
                 structural_change = baseline is not None and _structure_changed(baseline, current_fingerprint)
                 previous_identity = None
+                verifying_ready = False
                 if structural_change:
                     invalidate()
                 elif content_changed and cached_read is not None:
@@ -311,10 +312,10 @@ class LiveAssistant:
                     # semantics instead of restarting the settle timer on
                     # every codec/selection fluctuation.
                     previous_identity = (cached_read.board.letters, cached_read.board.dots)
+                    verifying_ready = not cached_read.warnings
                     cached_read = None
                     cached_fingerprint = None
                     cached_ranked = ()
-                    self._publish(LiveUpdate("reading", "Verifying changed tile ink", frame))
                 fingerprint = current_fingerprint
                 settled_now = detector.update(crop)
                 if detector.quiet_count < self.config.quiet_frames:
@@ -323,7 +324,14 @@ class LiveAssistant:
                     cached_ranked = ()
                     self._publish(LiveUpdate("waiting", "Board is moving; waiting for quiet frames", frame))
                 elif settled_now or cached_read is None:
-                    self._publish(LiveUpdate("reading", "Reading letters and dots on the settled board", frame))
+                    # Quiet selection/codec ink often verifies to the same
+                    # board. Keep its last confident update visible during
+                    # that internal check instead of flashing empty results.
+                    # Its timestamp is not renewed: poll() still expires it
+                    # if verification stalls. Motion, changed semantics and
+                    # uncertainty publish their clearing states below.
+                    if not verifying_ready:
+                        self._publish(LiveUpdate("reading", "Reading letters and dots on the settled board", frame))
                     try:
                         read = recognize(frame.image)
                     except ValueError as exc:

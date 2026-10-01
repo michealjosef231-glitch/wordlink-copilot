@@ -143,6 +143,11 @@ class WordLinkApp:
         self._live_state = "stopped"
         self._live_frame_at: float | None = None
         self._updating_entries = False
+        self.play_view = False
+        self._detail_widgets: list[tk.Widget] = []
+        self._last_render_at = 0.0
+        self._rendered_board: Board | None = None
+        self._live_selection: tuple[tuple[str, ...], tuple[int, ...], str, tuple[int, ...]] | None = None
         self._windows: dict[str, WindowInfo] = {}
         self._capture_help: tk.Toplevel | None = None
         self._permission_var = tk.StringVar(root, "")
@@ -161,6 +166,7 @@ class WordLinkApp:
         self.review_var = tk.StringVar(root, "16 tiles · letter / dot count")
         self.view_var = tk.StringVar(root, "Full screenshot")
         self.window_var = tk.StringVar(root, "Choose an existing mirror window")
+        self.play_view_var = tk.StringVar(root, "Play view")
         self.live_source_var = tk.StringVar(root, "Select a mirrored screen window, or replay a recording.")
         self.letter_vars = [tk.StringVar(root, "") for _ in range(16)]
         self.dot_vars = [tk.StringVar(root, "0") for _ in range(16)]
@@ -219,6 +225,8 @@ class WordLinkApp:
         self.status_label = tk.Label(header, textvariable=self.status_var, bg=SURFACE, fg=GREEN, font=("Helvetica", 9, "bold"), padx=12, pady=8)
         self.status_label.grid(row=0, column=2, rowspan=2, padx=(15, 20))
         self._button(header, "Open screenshot…", self.open_dialog, primary=True).grid(row=0, column=3, rowspan=2)
+        self._button(header, "", self.toggle_play_view, textvariable=self.play_view_var,
+                     font=("Helvetica", 10), padx=10).grid(row=0, column=4, rowspan=2, padx=(10, 0))
 
     def _build_live_controls(self) -> None:
         controls = tk.Frame(self.root, bg=BACKGROUND, padx=26, pady=10)
@@ -280,6 +288,7 @@ class WordLinkApp:
             spin.grid(row=0, column=3)
         self.solve_button = self._button(left, "Solve edited board", self.solve_corrected, primary=True)
         self.solve_button.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        self._detail_widgets.extend((review_header, editors, self.solve_button))
 
         right_shell = tk.Frame(content, bg=PANEL, width=370, highlightbackground=BORDER, highlightthickness=1)
         right_shell.grid(row=0, column=1, sticky="nsew")
@@ -311,7 +320,9 @@ class WordLinkApp:
         for row, (label, variable) in enumerate((("Utility proxy", self.utility_var), ("Tile dot total", self.dot_total_var), ("Estimated tracing", self.tracing_var))):
             self._label(metrics, label, bg=SURFACE, fg=MUTED, font=("Helvetica", 10)).grid(row=row, column=0, sticky="w", pady=4)
             self._label(metrics, textvariable=variable, bg=SURFACE, fg=YELLOW if row == 0 else TEXT, font=("Helvetica", 11, "bold"), anchor="e").grid(row=row, column=1, sticky="e", padx=(16, 0), pady=4)
-        self._label(right, "Proxy values are NOT game points.\nTracing time is a model estimate.", fg=MUTED, font=("Helvetica", 9), justify="left").grid(row=4, column=0, sticky="w", pady=(9, 15))
+        estimate_note = self._label(right, "Proxy values are NOT game points.\nTracing time is a model estimate.", fg=MUTED, font=("Helvetica", 9), justify="left")
+        estimate_note.grid(row=4, column=0, sticky="w", pady=(9, 15))
+        self._detail_widgets.extend((metrics, estimate_note))
         self._label(right, textvariable=self.path_var, fg=BLUE, wraplength=300, justify="left", font=("Helvetica", 10)).grid(row=5, column=0, sticky="ew", pady=(0, 22))
         self._label(right, "TOP 3 ALTERNATIVES", fg=MUTED, font=("Helvetica", 9, "bold")).grid(row=6, column=0, sticky="w", pady=(0, 10))
         self.alternatives_frame = tk.Frame(right, bg=PANEL)
@@ -319,10 +330,14 @@ class WordLinkApp:
         self.alternatives_frame.grid_columnconfigure(0, weight=1)
         self.empty_alternatives = self._label(self.alternatives_frame, "Candidate words will appear here.", fg=MUTED, font=("Helvetica", 10))
         self.empty_alternatives.grid(row=0, column=0, sticky="ew", pady=(4, 12))
-        self._label(right, "RECOGNITION REVIEW", fg=MUTED, font=("Helvetica", 9, "bold")).grid(row=8, column=0, sticky="w", pady=(22, 10))
-        tk.Message(right, textvariable=self.warning_var, bg=SURFACE, fg=YELLOW, font=("Helvetica", 10), width=300, padx=12, pady=10).grid(row=9, column=0, sticky="ew")
+        review_title = self._label(right, "RECOGNITION REVIEW", fg=MUTED, font=("Helvetica", 9, "bold"))
+        review_title.grid(row=8, column=0, sticky="w", pady=(22, 10))
+        review_message = tk.Message(right, textvariable=self.warning_var, bg=SURFACE, fg=YELLOW, font=("Helvetica", 10), width=300, padx=12, pady=10)
+        review_message.grid(row=9, column=0, sticky="ew")
         right.grid_rowconfigure(10, weight=1)
-        self._label(right, textvariable=self.processing_var, fg=MUTED, font=("Helvetica", 9), wraplength=300, justify="left").grid(row=11, column=0, sticky="ew", pady=(18, 0))
+        processing_label = self._label(right, textvariable=self.processing_var, fg=MUTED, font=("Helvetica", 9), wraplength=300, justify="left")
+        processing_label.grid(row=11, column=0, sticky="ew", pady=(18, 0))
+        self._detail_widgets.extend((review_title, review_message, processing_label))
         self._bind_result_scrolling(right)
         self.results_canvas.bind("<MouseWheel>", self._scroll_results)
 
@@ -330,6 +345,20 @@ class WordLinkApp:
         widget.bind("<MouseWheel>", self._scroll_results, add="+")
         for child in widget.winfo_children():
             self._bind_result_scrolling(child)
+
+    def toggle_play_view(self) -> None:
+        self._set_play_view(not self.play_view)
+
+    def _set_play_view(self, enabled: bool) -> None:
+        if self.closed or self.play_view == enabled:
+            return
+        self.play_view = enabled
+        self.play_view_var.set("Review / details" if enabled else "Play view")
+        for widget in self._detail_widgets:
+            widget.grid_remove() if enabled else widget.grid()
+        self.results_canvas.yview_moveto(0)
+        self._update_results()
+        self._draw_preview()
 
     def _scroll_results(self, event: tk.Event) -> str:
         if event.delta:
@@ -443,7 +472,9 @@ class WordLinkApp:
         self.board = None
         self._recognition = None
         self.last_result = None
+        self._live_selection = None
         self._clear_entries()
+        self._set_play_view(True)
         self._full_screenshot = False
         self.source_var.set(f"Live · {source.label}")
         self.live_source_var.set(f"Starting · {source.label} · Loading local vocabulary…")
@@ -590,11 +621,12 @@ class WordLinkApp:
         self.status_label.configure(fg=YELLOW)
         self.warning_var.set("Entries changed. Press Solve edited board to analyze your corrections.")
 
-    def _clear_suggestions(self) -> None:
+    def _clear_suggestions(self, *, render: bool = True) -> None:
         self.ranked_words = ()
         self.selected_index = 0
         self._update_results()
-        self._draw_preview()
+        if render:
+            self._draw_preview()
 
     def _open_shortcut(self, _event: tk.Event) -> str:
         self.open_dialog()
@@ -615,6 +647,7 @@ class WordLinkApp:
         if self.closed:
             return
         self.stop_live("Live reading paused for a screenshot.")
+        self._set_play_view(False)
         self.source_path = Path(path)
         self._image = None
         self.board = None
@@ -815,6 +848,9 @@ class WordLinkApp:
         if not self._live_requested or self.closed:
             return
         old_state = self._live_state
+        old_board = self.board
+        old_ranked = self.ranked_words
+        old_recognition = self._recognition
         state = update.state
         frame = update.frame
         if frame is not None:
@@ -824,25 +860,43 @@ class WordLinkApp:
         self._live_state = state
         self.source_var.set(self._live_label + (f" · {frame.media_time:.2f} s" if frame and frame.media_time is not None else " · Live"))
         self.live_source_var.set(f"{self._live_label} · {update.message}")
-        self.status_var.set(state.upper())
-        self.status_label.configure(fg=GREEN if state == "ready" else BLUE if state in ("waiting", "reading") else MUTED if state in ("ended", "stopped") else YELLOW)
+        visible_state = "CHECKING" if state in ("waiting", "reading") else state.upper()
+        if self.status_var.get() != visible_state:
+            self.status_var.set(visible_state)
+            self.status_label.configure(fg=GREEN if state == "ready" else BLUE if state in ("waiting", "reading") else MUTED if state in ("ended", "stopped") else YELLOW)
         self.processing_var.set(f"Live frame {update.sequence} · {update.elapsed_ms:.0f} ms\nSolve + rank {update.solve_ms:.0f} ms\n{len(update.ranked_words):,} candidates · {self._vocabulary_count:,} local words")
         recognition = update.recognition
         if state == "ready" and live_ready_is_fresh(state, frame.captured_at if frame else None, monotonic()) and recognition is not None:
-            same_result = old_state == "ready" and self.board == recognition.board and self.ranked_words == tuple(update.ranked_words)
+            same_contents = (old_board is not None and old_board.letters == recognition.board.letters
+                             and old_board.dots == recognition.board.dots)
+            same_result = same_contents and old_ranked == tuple(update.ranked_words)
+            rendered = self._rendered_board
+            geometry_changed = (rendered is None or len(rendered.boxes) != len(recognition.board.boxes)
+                                or any(max(abs(a-b) for a, b in zip(old, new)) > 3
+                                       for old, new in zip(rendered.boxes, recognition.board.boxes)))
             self.board = recognition.board
             self._recognition = recognition
             self.ranked_words = tuple(update.ranked_words)
             self.review_var.set("Live detected tiles · letter / dot count")
-            self._fill_entries(self.board, recognition)
+            if not same_result or old_state != "ready":
+                self._fill_entries(self.board, recognition)
             self.warning_var.set("The board is settled. Review the letters if a suggestion looks wrong. Common-word membership does not establish game acceptance.")
             if not same_result:
                 self.selected_index = 0
+                previous = self._live_selection
+                if previous and previous[:2] == (self.board.letters, self.board.dots):
+                    self.selected_index = next((index for index, candidate in enumerate(self.ranked_words)
+                                                if (candidate.found.word, candidate.found.path) == previous[2:]), 0)
                 self._update_results()
-            self._draw_preview()
+            # A fresh capture is a heartbeat, not a request to repaint every
+            # widget. Leave the word, choice and board picture still until
+            # their contents or meaningful overlay geometry actually change.
+            if not same_result or geometry_changed or (self._full_screenshot and monotonic()-self._last_render_at >= 1):
+                self._draw_preview()
         else:
             if state == "ready":
                 self._live_state = "waiting"
+                recognition = None
                 self.status_var.set("WAITING")
                 self.status_label.configure(fg=YELLOW)
                 self.live_source_var.set(f"{self._live_label} · Waiting for a fresh readable board…")
@@ -852,16 +906,22 @@ class WordLinkApp:
             self.board = recognition.board if recognition else None
             self._recognition = recognition
             if self.board is not None:
-                self._fill_entries(self.board, recognition)
-            else:
+                if self.board != old_board or recognition != old_recognition:
+                    self._fill_entries(self.board, recognition)
+            elif old_board is not None or any(variable.get() for variable in self.letter_vars):
                 self._clear_entries()
-            self._clear_suggestions()
+            changed = bool(old_ranked) or old_state != state or self.board != old_board or recognition != old_recognition
+            if changed:
+                self._clear_suggestions(render=False)
+            if changed or monotonic()-self._last_render_at >= 1:
+                self._draw_preview()
         if state in ("permission", "disconnected", "ended", "error", "stopped"):
             controller, self._live_controller = self._live_controller, None
             if controller is not None:
                 controller.stop(timeout=0)
             self._live_requested = False
             self._live_frame_at = None
+            self._live_selection = None
             self.start_live_button.configure(state="normal")
             self.stop_live_button.configure(state="disabled")
 
@@ -929,7 +989,8 @@ class WordLinkApp:
             return
         for row, candidate in enumerate(self.ranked_words[1:4]):
             index = row + 1
-            text = f"{candidate.found.word}    ·    utility {candidate.utility:.1f}\n{len(candidate.found.path)} letters  /  {candidate.found.dot_sum} dots  /  Band {candidate.confidence_band} · {candidate.status.upper()}"
+            text = (f"{candidate.found.word}\n{len(candidate.found.path)} letters · {candidate.found.dot_sum} dots" if self.play_view
+                    else f"{candidate.found.word}    ·    utility {candidate.utility:.1f}\n{len(candidate.found.path)} letters  /  {candidate.found.dot_sum} dots  /  Band {candidate.confidence_band} · {candidate.status.upper()}")
             button = self._button(self.alternatives_frame, text, lambda selected=index: self.select_candidate(selected), anchor="w", justify="left", font=("Helvetica", 10), padx=11, pady=10)
             button.grid(row=row, column=0, sticky="ew", pady=(0, 7))
             self._bind_result_scrolling(button)
@@ -937,14 +998,16 @@ class WordLinkApp:
         if len(self.ranked_words) == 1:
             self.empty_alternatives.configure(text="This is the only candidate for this board.")
             self.empty_alternatives.grid(row=0, column=0, sticky="ew", pady=(4, 12))
-        self.select_candidate(self.selected_index)
+        self.select_candidate(self.selected_index, render=False)
 
-    def select_candidate(self, index: int) -> None:
+    def select_candidate(self, index: int, *, render: bool = True) -> None:
         if self.closed or not 0 <= index < len(self.ranked_words):
             return
         self.selected_index = index
         self.best_button.configure(state="normal" if index != 0 else "disabled")
         candidate = self.ranked_words[index]
+        if self._live_requested and self.board is not None:
+            self._live_selection = (self.board.letters, self.board.dots, candidate.found.word, candidate.found.path)
         self.result_title_var.set("BEST CANDIDATE" if index == 0 else "SELECTED ALTERNATIVE")
         self.best_word_var.set(candidate.found.word)
         self.best_label.configure(font=("Helvetica", 36 if len(candidate.found.word) <= 10 else 25, "bold"))
@@ -957,7 +1020,8 @@ class WordLinkApp:
         self.path_var.set("Path: " + " → ".join(str(tile + 1) for tile in candidate.found.path))
         for offset, button in enumerate(self.alternative_buttons, start=1):
             button.configure(bg="#203b5b" if offset == index else SURFACE, highlightbackground=BLUE if offset == index else BORDER)
-        self._draw_preview()
+        if render:
+            self._draw_preview()
 
     def toggle_view(self) -> None:
         self._full_screenshot = not self._full_screenshot
@@ -980,6 +1044,8 @@ class WordLinkApp:
         self._render_id = None
         if self.closed:
             return
+        self._last_render_at = monotonic()
+        self._rendered_board = self.board
         self.canvas.delete("all")
         width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
         if width < 2 or height < 2:

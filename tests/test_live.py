@@ -538,12 +538,103 @@ def test_selected_tile_glyph_variation_rechecks_same_board_without_losing_ready(
         changed = live._content_fingerprint(highlighted, BOXES)
         assert not live._same_content(original, changed)
 
+        published = []
+        original_publish = harness.assistant._publish
+
+        def observe(update):
+            published.append(update)
+            original_publish(update)
+
+        monkeypatch.setattr(harness.assistant, "_publish", observe)
         for image in (highlighted, baseline, highlighted):
+            published.clear()
             harness.source.push(image)
             ready = wait_update(harness.assistant, "ready")
             assert ready.recognition.board.letters == LETTERS
             assert [candidate.found.word for candidate in ready.ranked_words] == ["CAT"]
+            # Observe every publication, since the latest-only queue can hide
+            # a provisional reading event that briefly empties the GUI.
+            assert [update.state for update in published] == ["ready"]
         assert harness.recognition_calls >= 2
         assert harness.solve_calls == 1
+    finally:
+        harness.finish()
+
+
+def test_slow_same_board_verification_expires_old_ready_without_refreshing_it(monkeypatch):
+    entered, release = Event(), Event()
+    checking = [False]
+    board = Board(LETTERS, (1,) * 16, BOXES)
+
+    def recognition(image):
+        if checking[0]:
+            entered.set()
+            assert release.wait(2), "Verification was not released"
+        return Recognition(board, (), 1.0)
+
+    harness = Harness(monkeypatch, config=live.LiveConfig(sample_fps=60, max_frame_age=.15),
+                      recognition=recognition)
+    try:
+        baseline = board_image()
+        ready = harness.settle(baseline)
+        highlighted = baseline.copy()
+        x, y, _, _ = BOXES[0]
+        cv2.rectangle(highlighted, (x + 4, y + 9), (x + 20, y + 15), (0, 0, 0), -1)
+        clock = [ready.frame.captured_at + .01]
+        monkeypatch.setattr(live, "monotonic", lambda: clock[0])
+        checking[0] = True
+        harness.source.events.put(CapturedFrame(highlighted, clock[0]))
+        wait_until(entered.is_set)
+        # Equivalent ink is being checked; no empty provisional update and
+        # no heartbeat manufactured from the unverified incoming image.
+        assert harness.assistant.poll() is None
+        assert harness.assistant._last_update.frame.captured_at == ready.frame.captured_at
+        clock[0] += .18
+        expired = wait_update(harness.assistant, "waiting")
+        assert "stale" in expired.message
+        assert not expired.ranked_words
+        release.set()
+        stale_read = wait_update(harness.assistant, "waiting")
+        assert "stale while reading" in stale_read.message
+        assert not stale_read.ranked_words
+        checking[0] = False
+        monkeypatch.setattr(live, "monotonic", monotonic)
+        assert harness.settle(baseline).ranked_words
+    finally:
+        release.set()
+        harness.finish()
+
+
+@pytest.mark.parametrize("outcome", ["changed", "warning", "invalid"])
+def test_quiet_ink_verification_clears_ready_when_new_read_cannot_be_reused(monkeypatch, outcome):
+    checking = [False]
+    original = Recognition(Board(LETTERS, (1,) * 16, BOXES), (), 1.0)
+
+    def recognition(image):
+        if not checking[0]:
+            return original
+        if outcome == "invalid":
+            raise ValueError("Uncertain tile content")
+        if outcome == "warning":
+            return Recognition(original.board, (), 1.0, ("Tile 1: uncertain letter",))
+        return Recognition(Board(("D", *LETTERS[1:]), (1,) * 16, BOXES), (), 1.0)
+
+    harness = Harness(monkeypatch, recognition=recognition)
+    try:
+        baseline = board_image()
+        harness.settle(baseline)
+        highlighted = baseline.copy()
+        x, y, _, _ = BOXES[0]
+        cv2.rectangle(highlighted, (x + 4, y + 9), (x + 20, y + 15), (0, 0, 0), -1)
+        checking[0] = True
+        harness.source.push(highlighted)
+        update = wait_update(harness.assistant, "waiting" if outcome == "changed" else "review")
+        assert not update.ranked_words
+        if outcome == "changed":
+            assert "Board changed" in update.message
+            assert update.recognition is None
+        else:
+            assert "uncertain" in update.message.casefold()
+        assert harness.recognition_calls == 2
     finally:
         harness.finish()

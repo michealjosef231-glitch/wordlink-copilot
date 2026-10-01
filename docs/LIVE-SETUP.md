@@ -10,7 +10,7 @@
 
 QuickTime discovers the USB device. The assistant discovers Mac windows and reads the selected window's pixels; it does not directly pair with the iPad. Apple's [Monterey QuickTime guide](https://support.apple.com/en-ie/guide/quicktime-player/qtp356b55534/10.5/mac/12.0) documents the connected-device source menu. Actual device availability depends on the USB connection, device trust, and QuickTime support.
 
-On 2026-09-30, the installed assistant successfully read one physical iPad board through the “iPad de pop’s” QuickTime source, matching all 16 letters and dot counts. The USB connection later dropped and the assistant cleared its results. Sustained connection, reconnection and real gameplay board changes remain pending; see [validation](VALIDATION.md) for the observed evidence. A previously successful read does not mean the device is currently connected.
+On 2026-09-30, the installed assistant successfully read one physical iPad board through the “iPad de pop’s” QuickTime source, matching all 16 letters and dot counts. The USB connection later dropped and the assistant cleared its results. USB and picture then returned; manual reselection of the QuickTime window in the revised installed app reached `READY` on the same known board. At the last check, the app was left live. Sustained connection, automatic recovery across a new drop, and real gameplay board changes remain pending; see [validation](VALIDATION.md) for the observed evidence. Check the picture and selected window again when starting a later session.
 
 ## Allow screen capture
 
@@ -20,7 +20,9 @@ Screen Recording access permits the operating system to supply another applicati
 
 ## Reading behavior
 
-The assistant samples at 4 frames per second and waits for three quiet board frames before recognizing. A confident read updates the word candidates and numbered path. A single worker avoids building a queue of old frames. A changing, highlighted, missing, uncertain, or stale board clears recommendations. The interface independently clears a displayed result if fresh input stops arriving for 1.5 seconds.
+The assistant samples at 4 frames per second and waits for three quiet board frames before recognizing. A confident read updates the word candidates and numbered path. A single worker avoids building a queue of old frames. A briefly highlighted tile on an otherwise unchanged board can keep the last verified result visible while the assistant checks it again; this does not refresh the result's timestamp. True motion, changed letters or dots, an incomplete board, uncertainty, or stale input clears recommendations. The interface independently clears a displayed result if fresh input stops arriving for 1.5 seconds.
+
+**Start live** opens the compact **Play view** automatically, showing a large board with the current word path and three alternatives. Choose **Review / details** for editable tile entries and diagnostics. Opening a screenshot switches to Review view. Same-board live updates keep the selected alternative and board picture steady; a different board resets the best suggestion. The assistant never performs the game gesture for you.
 
 Choose **Stop** to pause reading. Opening a screenshot or editing a letter/dot count also stops live capture so a new frame cannot overwrite the correction. Choose **Start live** again to start a fresh selected-window session.
 
@@ -47,4 +49,4 @@ Replay validates the application pipeline. A native capture test validates the p
 - **Waiting for board:** show the entire 4x4 grid at a readable size. Selected cells, animation, an unfamiliar font, or an incomplete grid may prevent a reliable read.
 - **Review needed:** stop reading, correct the displayed letters and dots, and solve the edited board. Confidence scores are estimates.
 - **Disconnected:** reopen/unminimize the selected mirror window and start a new session. Closing the source window invalidates its selection.
-- **Waiting after a USB drop:** restore the physical connection and confirm the iPad picture in QuickTime. A preview window can remain open while its device has disappeared, so Copilot may show Waiting rather than Disconnected. Choose Refresh and deliberately select the current mirror window; start a fresh session if it stopped. Recommendations and editable letters should remain cleared until a readable board returns.
+- **Waiting after a USB drop:** restore the physical connection and confirm the iPad picture in QuickTime. A preview window can remain open while its device has disappeared, so Copilot may show Waiting rather than Disconnected. Choose Refresh and deliberately select the current mirror window; start a fresh session if it stopped. This manual recovery worked with the known board on 2026-09-30. Recommendations and editable letters should remain cleared until a readable board returns.
