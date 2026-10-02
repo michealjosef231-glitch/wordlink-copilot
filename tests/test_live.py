@@ -64,13 +64,17 @@ class FakeSource:
 
 
 class Harness:
-    def __init__(self, monkeypatch, *, config=None, recognition=None):
+    def __init__(self, monkeypatch, *, config=None, recognition=None, detection=None):
         self.source = FakeSource()
         self.recognition_calls = 0
+        self.detect_calls = 0
         self.solve_calls = 0
         self.assistant = live.LiveAssistant(self.source, Trie(["CAT", "DAT"]), VocabularyPolicy(), config or live.LiveConfig(sample_fps=60))
 
         def detect(image):
+            self.detect_calls += 1
+            if detection is not None:
+                return detection(image)
             if not image.any():
                 raise ValueError("No complete 4x4 grid")
             return BOXES
@@ -98,7 +102,11 @@ class Harness:
     def settle(self, image=None):
         image = board_image() if image is None else image
         for index in range(self.assistant.config.quiet_frames):
+            before = self.detect_calls
             self.source.push(image, media_time=index)
+            # Latest-only capture can drop a burst on a busy host. Feed each
+            # intended quiet observation after the prior one was consumed.
+            wait_until(lambda: self.detect_calls > before)
         return wait_update(self.assistant, "ready")
 
     def finish(self):
@@ -464,8 +472,7 @@ def test_gradual_board_translation_refreshes_cached_path_coordinates(monkeypatch
     def recognition(image):
         return Recognition(Board(LETTERS, (1,) * 16, boxes_for(image)), (), 1.0)
 
-    harness = Harness(monkeypatch, recognition=recognition)
-    monkeypatch.setattr(live, "detect_tiles", boxes_for)
+    harness = Harness(monkeypatch, recognition=recognition, detection=boxes_for)
 
     def translated(shift):
         image = np.full((190, 240, 3), (140, 65, 20), dtype=np.uint8)

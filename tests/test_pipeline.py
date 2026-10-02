@@ -51,3 +51,12 @@ def test_recording_pipeline_waits_skips_bad_reads_and_deduplicates(monkeypatch):
     assert result["boards"][0]["status"] == "solved"
     assert result["counts"]["missing_or_moving_tiles"] == 1
     assert result["diagnostic_examples"][0]["reason"] == "Unreadable falling glyph"
+
+
+def test_cli_accepts_sixteen_tokens_with_qu(tmp_path):
+    output = tmp_path / "qu.json"
+    assert main(["board", "Qu I T X X X X X X X X X X X X X", "--dots", "3 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1", "--json", str(output)]) == 0
+    result = json.loads(output.read_text())
+    assert result["board"]["letters"][0] == "QU"
+    quit_word = next(row["found"] for row in result["recommendations"] if row["found"]["word"] == "QUIT")
+    assert quit_word["path"] == [0, 1, 2] and quit_word["dot_sum"] == 5

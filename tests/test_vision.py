@@ -120,3 +120,58 @@ def test_bad_image_inputs_are_rejected(tmp_path):
         recognize(tmp_path / "missing.png")
     with pytest.raises(ValueError, match="BGR"):
         recognize(np.zeros((100, 100), np.uint8))
+
+
+@pytest.mark.parametrize("token", ["QU", "O", "Q", "U"])
+@pytest.mark.parametrize("scale", [.7, 1, 1.4])
+def test_qu_and_single_letters_are_correct_or_held_for_review(token, scale):
+    from wordlink.vision.letters import recognize_letter
+    image = cv2.imread(str(FIXTURE_DIR.parent / "tiles" / f"{token.lower()}-arial.png"))
+    image = cv2.resize(image, None, fx=scale, fy=scale)
+    letter, score, margin = recognize_letter(image)
+    if token == "Q":
+        assert letter != "QU"
+        assert letter == "Q" or score < .82 or margin < .035
+    else:
+        assert letter == token
+        assert score >= .82 and margin >= .035
+    assert count_dots(image)[0] == 3
+
+
+def test_packed_templates_exactly_match_original_masks():
+    from wordlink.vision.letters import DEFAULT_TEMPLATE_DIR
+    templates = load_templates(str(DEFAULT_TEMPLATE_DIR))
+    paths = sorted(DEFAULT_TEMPLATE_DIR.glob("*.png"))
+    assert len(templates) == len(paths)
+    assert "QU" in {token for token, _ in templates}
+    for (token, mask), path in zip(templates, paths):
+        assert token == path.stem.split("-")[0]
+        assert np.array_equal(mask, normalize_glyph(cv2.imread(str(path), 0)))
+
+
+def test_qu_whole_board_read_and_live_fingerprint():
+    from wordlink.capture.live import _content_fingerprint, _same_content
+    # Generic Arial test glyphs are not among the training fonts.
+    tile = cv2.imread(str(FIXTURE_DIR.parent / "tiles/qu-arial.png"))
+    image = np.full((460, 460, 3), (190, 90, 20), np.uint8)
+    for row in range(4):
+        for col in range(4):
+            image[15+row*110:115+row*110,15+col*110:115+col*110] = tile
+    read = recognize(image)
+    assert read.board.letters == ("QU",) * 16
+    assert read.board.dots == (3,) * 16
+    assert not read.warnings
+    baseline = _content_fingerprint(image, read.board.boxes)
+    image[15:115,15:115] = cv2.imread(str(FIXTURE_DIR.parent / "tiles/o-arial.png"))
+    assert not _same_content(baseline, _content_fingerprint(image, read.board.boxes))
+
+
+def test_malformed_packed_templates_fall_back_to_png(tmp_path):
+    from wordlink.vision.letters import DEFAULT_TEMPLATE_DIR
+    import shutil
+    for token in (*"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "QU"):
+        source = next(DEFAULT_TEMPLATE_DIR.glob(token + "-*.png"))
+        shutil.copyfile(source, tmp_path / (token + "-test.png"))
+    (tmp_path / "glyphs.npz").write_bytes(b"incomplete archive")
+    templates = load_templates(str(tmp_path))
+    assert {token for token, _ in templates} == set("ABCDEFGHIJKLMNOPQRSTUVWXYZ") | {"QU"}

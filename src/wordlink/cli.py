@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     screenshot.add_argument("--top", type=int, default=3)
     screenshot.add_argument("--allow-uncertain", action="store_true", help="Include flagged reads for offline inspection")
     manual = sub.add_parser("board", help="Solve a manually entered 4x4 board")
-    manual.add_argument("letters", help="16 letters, with optional row spaces")
+    manual.add_argument("letters", help="16 A-Z tiles; use 16 space-separated tokens when a tile is Qu")
     manual.add_argument("--dots", required=True, help="16 space-separated integer dot counts")
     manual.add_argument("--json", type=Path)
     manual.add_argument("--top", type=int, default=3)
@@ -147,7 +147,8 @@ def main(argv: list[str] | None = None) -> int:
                 image = cv2.imread(str(args.image))
                 save_overlay(args.overlay, image, read.board, found)
         else:
-            letters = tuple("".join(args.letters.split()).upper())
+            tokens = args.letters.upper().split()
+            letters = tuple(tokens) if len(tokens) == 16 else tuple("".join(tokens))
             dots = tuple(int(value) for value in args.dots.split())
             result = solve_board(Board(letters, dots), trie, policy)
         result["timings_ms"]["dictionary_setup"] = setup_ms

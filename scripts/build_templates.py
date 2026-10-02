@@ -1,4 +1,4 @@
-"""Generate local A-Z bitmap templates from installed fonts, without font copies.
+"""Generate local A-Z and Qu bitmap templates from installed fonts, without font copies.
 
 Run from the project root: .venv/bin/python scripts/build_templates.py
 These are synthetic training glyphs, not labels from evaluation screenshots.
@@ -38,15 +38,19 @@ def build(output: Path, fonts: list[Path]) -> int:
                     if b"Weight" in axis["name"]:
                         values[i] = min(axis["maximum"], max(axis["minimum"], weight))
                 font.set_variation_by_axes(values)
-            for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            for letter in (*"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "Qu"):
                 canvas = Image.new("L", (180, 180), 0)
                 draw = ImageDraw.Draw(canvas)
                 draw.text((30, 10), letter, font=font, fill=255)
                 mask = normalize_glyph(np.asarray(canvas))
-                name = f"{letter}-{path.stem}-{weight}.png"
+                name = f"{letter.upper()}-{path.stem}-{weight}.png"
                 if not cv2.imwrite(str(output / name), mask):
                     raise OSError(f"Could not write {name}")
                 total += 1
+    paths = sorted(output.glob("*.png"))
+    tokens = [path.stem.split("-")[0] for path in paths]
+    masks = np.stack([normalize_glyph(cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)) for path in paths])
+    np.savez_compressed(output / "glyphs.npz", tokens=np.array(tokens), masks=masks)
     return total
 
 

@@ -45,21 +45,36 @@ def extract_glyph(tile: np.ndarray) -> np.ndarray:
     components = [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= max(3, width * height * .003)]
     if not components:
         raise ValueError("No readable letter found in tile")
-    largest = max(components, key=lambda i: stats[i, cv2.CC_STAT_AREA])
-    return normalize_glyph((labels == largest).astype(np.uint8) * 255)
+    # Qu has two substantial disconnected components. Dropping the smaller
+    # one turns its Q into an apparently confident O and creates illegal paths.
+    return normalize_glyph(np.isin(labels, components).astype(np.uint8) * 255)
 
 
 @lru_cache(maxsize=8)
 def load_templates(template_dir: str) -> tuple[tuple[str, np.ndarray], ...]:
     directory = Path(template_dir)
     templates: list[tuple[str, np.ndarray]] = []
+    packed = directory / "glyphs.npz"
+    if packed.is_file():
+        try:
+            with np.load(packed, allow_pickle=False) as archive:
+                tokens, masks = archive["tokens"], archive["masks"]
+            valid = (tokens.ndim == 1 and masks.shape == (len(tokens), GLYPH_SIZE, GLYPH_SIZE)
+                     and masks.dtype == np.uint8 and len(tokens) > 0
+                     and all(re.fullmatch(r"QU|[A-Z]", str(token)) for token in tokens)
+                     and set("ABCDEFGHIJKLMNOPQRSTUVWXYZ").issubset(set(tokens))
+                     and all(np.any(mask) for mask in masks))
+            if valid:
+                return tuple((str(token), mask) for token, mask in zip(tokens, masks))
+        except (OSError, ValueError, KeyError):
+            pass  # Original PNG templates remain a validated recovery route.
     for path in sorted(directory.glob("*.png")):
-        if not re.fullmatch(r"[A-Z](?:[-_.].*)?", path.stem):
+        if not re.fullmatch(r"(?:QU|[A-Z])(?:[-_.].*)?", path.stem):
             continue
         image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if image is None:
             raise ValueError(f"Unreadable letter template: {path.name}")
-        templates.append((path.stem[0], normalize_glyph(image)))
+        templates.append((path.stem.split("-")[0].split("_")[0].split(".")[0], normalize_glyph(image)))
     missing = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ") - {letter for letter, _ in templates}
     if missing:
         raise ValueError(f"Missing letter templates in {directory}: {''.join(sorted(missing))}")

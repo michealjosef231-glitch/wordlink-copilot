@@ -61,8 +61,8 @@ def parse_board_entries(
     parsed_dots: list[int] = []
     for index, (letter, count) in enumerate(zip(letters, dots), start=1):
         normalized = letter.strip().upper()
-        if len(normalized) != 1 or not ("A" <= normalized <= "Z"):
-            raise ValueError(f"Tile {index}: enter one letter from A to Z.")
+        if normalized != "QU" and (len(normalized) != 1 or not ("A" <= normalized <= "Z")):
+            raise ValueError(f"Tile {index}: enter A to Z, or Qu for one combined tile.")
         cleaned_count = count.strip()
         if not cleaned_count.isascii() or not cleaned_count.isdigit():
             raise ValueError(f"Tile {index}: enter a whole dot count from 0 to 10.")
@@ -1046,8 +1046,8 @@ class WordLinkApp:
             return
         for row, candidate in enumerate(self.ranked_words[1:4]):
             index = row + 1
-            text = (f"{candidate.found.word}\n{len(candidate.found.path)} letters · {candidate.found.dot_sum} dots" if self.play_view
-                    else f"{candidate.found.word}    ·    utility {candidate.utility:.1f}\n{len(candidate.found.path)} letters  /  {candidate.found.dot_sum} dots  /  Band {candidate.confidence_band} · {candidate.status.upper()}")
+            text = (f"{candidate.found.word}\n{len(candidate.found.word)} letters · {candidate.found.dot_sum} dots" if self.play_view
+                    else f"{candidate.found.word}    ·    utility {candidate.utility:.1f}\n{len(candidate.found.word)} letters  /  {candidate.found.dot_sum} dots  /  Band {candidate.confidence_band} · {candidate.status.upper()}")
             button = self._button(self.alternatives_frame, text, lambda selected=index: self.select_candidate(selected), anchor="w", justify="left", font=("Helvetica", 10), padx=11, pady=10)
             button.grid(row=row, column=0, sticky="ew", pady=(0, 7))
             self._bind_result_scrolling(button)

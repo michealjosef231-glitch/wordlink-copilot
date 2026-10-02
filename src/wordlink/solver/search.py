@@ -27,7 +27,7 @@ def find_words(board: Board, trie: Trie, min_length: int = 3) -> list[FoundWord]
     """
     if isinstance(min_length, bool) or not isinstance(min_length, int) or min_length < 1:
         raise ValueError("Minimum word length must be a positive integer")
-    if min_length > 16:
+    if min_length > sum(map(len, board.letters)):
         return []
 
     results: list[FoundWord] = []
@@ -35,22 +35,30 @@ def find_words(board: Board, trie: Trie, min_length: int = 3) -> list[FoundWord]
     letters = board.letters
     dots = board.dots
 
+    def advance(node: TrieNode, token: str) -> TrieNode | None:
+        # A QU tile consumes both trie edges while visiting one physical tile.
+        for letter in token:
+            node = node.children.get(letter)
+            if node is None:
+                return None
+        return node
+
     def visit(index: int, node: TrieNode, used: int, dot_sum: int) -> None:
         path.append(index)
         used |= 1 << index
         dot_sum += dots[index]
-        if node.word is not None and len(path) >= min_length:
+        if node.word is not None and len(node.word) >= min_length:
             results.append(FoundWord(node.word, tuple(path), dot_sum))
         for neighbor in NEIGHBORS[index]:
             if used & (1 << neighbor):
                 continue
-            child = node.children.get(letters[neighbor])
+            child = advance(node, letters[neighbor])
             if child is not None:
                 visit(neighbor, child, used, dot_sum)
         path.pop()
 
     for index, letter in enumerate(letters):
-        child = trie.root.children.get(letter)
+        child = advance(trie.root, letter)
         if child is not None:
             visit(index, child, 0, 0)
     results.sort(key=lambda found: (found.word, found.path))

@@ -170,3 +170,35 @@ def test_scoring_profile_refuses_false_calibration_and_invalid_coefficients(tmp_
             ScoringProfile(seconds_per_tile=invalid)
     with pytest.raises(ValueError, match="positive"):
         ScoringProfile(seconds_per_tile=0)
+
+
+def test_qu_consumes_two_letters_one_tile_and_one_dot_value():
+    board = board_at({0: "QU", 1: "I", 2: "T"}, {0: 3})
+    words = find_words(board, Trie(["QUIT", "QIT", "UIT", "IT", "QUQU"]))
+    assert words == [FoundWord("QUIT", (0, 1, 2), 5)]
+    assert find_words(board, Trie(["QUIT"]), min_length=4) == words
+    assert not find_words(board, Trie(["QUIT"]), min_length=5)
+
+
+def test_qu_two_tile_word_and_multiple_qu_tiles():
+    board = board_at({0: "QU", 1: "A", 5: "QU"})
+    words = find_words(board, Trie(["QUA", "QUAQU"]))
+    assert FoundWord("QUA", (0, 1), 2) in words
+    assert FoundWord("QUAQU", (0, 1, 5), 3) in words
+    assert all(len(set(word.path)) == len(word.path) for word in words)
+
+
+def test_qu_screenshot_board_cannot_use_first_tile_as_o():
+    board = Board(("QU", "E", "S", "U", "P", "I", "N", "E",
+                   "E", "O", "S", "Y", "O", "O", "T", "H"), (1,) * 16)
+    words = find_words(board, Trie(["POISONS", "QUIP", "QUIPS"]))
+    assert FoundWord("QUIP", (0, 5, 4), 3) in words
+    assert not any(word.path == (4, 0, 5, 10, 9, 6, 2) for word in words)
+    assert all("".join(board.letters[i] for i in word.path) == word.word for word in words)
+
+
+def test_qu_word_can_exceed_sixteen_letters_without_reusing_tiles():
+    board = Board(("QU", *"ABCDEFGHIJKLMNO"), (1,) * 16)
+    path = (0, 1, 2, 3, 7, 6, 5, 4, 8, 9, 10, 11, 15, 14, 13, 12)
+    word = "".join(board.letters[i] for i in path)
+    assert find_words(board, Trie([word]), min_length=17) == [FoundWord(word, path, 16)]

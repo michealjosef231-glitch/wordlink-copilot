@@ -87,3 +87,10 @@ def test_uncertain_screenshot_holds_words_until_explicit_manual_solve(monkeypatc
     assert not outcome.ranked_words and outcome.error is None
     confirmed = app._solve_board(outcome.board, outcome.image, Event())
     assert confirmed.edited and confirmed.ranked_words and confirmed.error is None
+
+
+def test_manual_qu_is_one_tile_token():
+    board = parse_board_entries(["Qu", *list("ABCDEFGHIJKLMNO")], ["1"] * 16)
+    assert board.letters[0] == "QU" and len(board.letters) == 16
+    with pytest.raises(ValueError):
+        parse_board_entries(["QUA", *list("ABCDEFGHIJKLMNO")], ["1"] * 16)
