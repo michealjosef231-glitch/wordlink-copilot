@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable, Sequence
 
 from PIL import Image, ImageTk
 
-from wordlink.capture.sources import FrameSource
+from wordlink.capture.sources import CapturedFrame, FrameSource
 from wordlink.model import Board, Box, Recognition
 from wordlink.paths import DATA_DIR
 from wordlink.solver.ranking import RankedWord, rank_words
@@ -123,6 +123,10 @@ class WordLinkApp:
         self.source_path: Path | None = None
         self._image: Image.Image | None = None
         self._photo: ImageTk.PhotoImage | None = None
+        self._preview_layout = None
+        self._image_at = 0.0
+        self._preview_signature = None
+        self._live_crop_boxes: tuple[Box, ...] = ()
         self._recognition: Recognition | None = None
         self._trie: Trie | None = None
         self._policy: VocabularyPolicy | None = None
@@ -473,6 +477,9 @@ class WordLinkApp:
         self._recognition = None
         self.last_result = None
         self._live_selection = None
+        self._image_at = 0.0
+        self._preview_signature = None
+        self._live_crop_boxes = ()
         self._clear_entries()
         self._set_play_view(True)
         self._full_screenshot = False
@@ -805,6 +812,10 @@ class WordLinkApp:
             else:
                 if update is not None:
                     self._apply_live_update(update)
+                if self._live_controller is not None:
+                    frame = self._live_controller.poll_frame()
+                    if frame is not None:
+                        self._apply_preview_frame(frame)
         if self._live_requested and self._live_state == "ready" and not live_ready_is_fresh("ready", self._live_frame_at, monotonic()):
             self._live_state = "waiting"
             self.status_var.set("WAITING")
@@ -815,7 +826,7 @@ class WordLinkApp:
             self._recognition = None
             self._clear_entries()
             self._clear_suggestions()
-        self._poll_id = self.root.after(50, self._poll)
+        self._poll_id = self.root.after(16, self._poll)
 
     def _clear_entries(self) -> None:
         self._updating_entries = True
@@ -854,7 +865,9 @@ class WordLinkApp:
         state = update.state
         frame = update.frame
         if frame is not None:
-            self._image = Image.fromarray(frame.image[:, :, ::-1].copy())
+            if frame.captured_at >= self._image_at or update.recognition is not old_recognition:
+                self._image = Image.frombytes('RGB', (frame.image.shape[1], frame.image.shape[0]), frame.image, 'raw', 'BGR', 0, 1)
+                self._image_at = frame.captured_at
             self._live_frame_at = frame.captured_at
             self.view_button.configure(state="normal")
         self._live_state = state
@@ -875,6 +888,13 @@ class WordLinkApp:
                                 or any(max(abs(a-b) for a, b in zip(old, new)) > 3
                                        for old, new in zip(rendered.boxes, recognition.board.boxes)))
             self.board = recognition.board
+            self._live_crop_boxes = self.board.boxes
+            if recognition is not old_recognition or self._preview_signature is None:
+                from wordlink.capture.live import _content_fingerprint
+                try:
+                    self._preview_signature = _content_fingerprint(frame.image, self.board.boxes)
+                except (ValueError, IndexError):
+                    self._preview_signature = None
             self._recognition = recognition
             self.ranked_words = tuple(update.ranked_words)
             self.review_var.set("Live detected tiles · letter / dot count")
@@ -891,8 +911,10 @@ class WordLinkApp:
             # A fresh capture is a heartbeat, not a request to repaint every
             # widget. Leave the word, choice and board picture still until
             # their contents or meaningful overlay geometry actually change.
-            if not same_result or geometry_changed or (self._full_screenshot and monotonic()-self._last_render_at >= 1):
+            if not same_result or geometry_changed:
                 self._draw_preview()
+            else:
+                self._refresh_preview_image()
         else:
             if state == "ready":
                 self._live_state = "waiting"
@@ -913,8 +935,10 @@ class WordLinkApp:
             changed = bool(old_ranked) or old_state != state or self.board != old_board or recognition != old_recognition
             if changed:
                 self._clear_suggestions(render=False)
-            if changed or monotonic()-self._last_render_at >= 1:
+            if changed:
                 self._draw_preview()
+            else:
+                self._refresh_preview_image()
         if state in ("permission", "disconnected", "ended", "error", "stopped"):
             controller, self._live_controller = self._live_controller, None
             if controller is not None:
@@ -924,6 +948,39 @@ class WordLinkApp:
             self._live_selection = None
             self.start_live_button.configure(state="normal")
             self.stop_live_button.configure(state="disabled")
+
+    def _apply_preview_frame(self, frame: CapturedFrame) -> None:
+        """Refresh pixels independently; only recognition renews word freshness."""
+        if (not self._live_requested or self.closed or frame.captured_at <= self._image_at
+                or not live_ready_is_fresh("ready", frame.captured_at, monotonic())):
+            return
+        if self.ranked_words and self.board is not None:
+            # Never paint an unverified changed board beneath an old path.
+            # Preserve the verified picture during a small semantic recheck;
+            # once the reader clears recommendations, animation flows freely.
+            from wordlink.capture.live import _content_fingerprint, _same_content
+            try:
+                matching = (self._preview_signature is not None and _same_content(
+                    self._preview_signature, _content_fingerprint(frame.image, self.board.boxes)))
+            except (ValueError, IndexError):
+                matching = False
+            if not matching:
+                return
+        self._image = Image.frombytes('RGB', (frame.image.shape[1], frame.image.shape[0]), frame.image, 'raw', 'BGR', 0, 1)
+        self._image_at = frame.captured_at
+        self._refresh_preview_image()
+
+    def _refresh_preview_image(self) -> None:
+        """Replace pixels in the existing Tk image without deleting its overlay."""
+        if self._image is None or self._photo is None or self._preview_layout is None:
+            self._draw_preview()
+            return
+        source_size, bounds, shown_size = self._preview_layout
+        if source_size != self._image.size:
+            self._draw_preview()
+            return
+        resized = self._image.crop(bounds).resize(shown_size, Image.Resampling.BILINEAR)
+        self._photo.paste(resized)
 
     def _apply_result(self, outcome: AnalysisOutcome) -> None:
         self.last_result = outcome
@@ -1051,14 +1108,17 @@ class WordLinkApp:
         if width < 2 or height < 2:
             return
         self._photo = None
+        self._preview_layout = None
         displayed_boxes: list[tuple[float, float, float, float]] = []
         use_image = self._image is not None and (self._full_screenshot or self.board is None or bool(self.board.boxes))
         if use_image and self._image is not None:
-            bounds = (0, 0, *self._image.size) if self._full_screenshot else crop_bounds(self._image.size, self.board.boxes if self.board else ())
+            boxes = self.board.boxes if self.board else self._live_crop_boxes if self._live_requested else ()
+            bounds = (0, 0, *self._image.size) if self._full_screenshot else crop_bounds(self._image.size, boxes)
             cropped = self._image.crop(bounds)
             scale = min((width - 28) / cropped.width, (height - 30) / cropped.height)
             shown_width, shown_height = max(1, round(cropped.width * scale)), max(1, round(cropped.height * scale))
-            resized = cropped.resize((shown_width, shown_height), Image.Resampling.LANCZOS)
+            resized = cropped.resize((shown_width, shown_height), Image.Resampling.BILINEAR if self._live_requested else Image.Resampling.LANCZOS)
+            self._preview_layout = (self._image.size, bounds, (shown_width, shown_height))
             self._photo = ImageTk.PhotoImage(resized, master=self.root)
             offset_x, offset_y = (width - shown_width) / 2, (height - shown_height) / 2
             self.canvas.create_image(offset_x, offset_y, anchor="nw", image=self._photo)

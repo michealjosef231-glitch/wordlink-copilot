@@ -75,6 +75,19 @@ def test_missing_or_incomplete_board_is_rejected():
         detect_tiles(image)
 
 
+def test_same_tile_geometry_requires_blue_background_in_each_frame():
+    image = synthetic_grid()
+    boxes = detect_tiles(image)
+    assert len(boxes) == 16
+    # Identical tile contours in a later non-game screen are insufficient.
+    changed = image.copy()
+    background = np.all(changed == (190, 90, 20), axis=2)
+    changed[background] = (20, 30, 190)
+    with pytest.raises(ValueError, match="4x4"):
+        detect_tiles(changed)
+    assert detect_tiles(image) == boxes
+
+
 @pytest.mark.parametrize("dots", range(6))
 def test_dot_count_ignores_letter_and_tile_edges(dots):
     tile = np.full((90, 90, 3), 245, np.uint8)

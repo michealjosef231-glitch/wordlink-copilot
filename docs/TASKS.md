@@ -29,3 +29,9 @@ The vision agent owned detection, glyph/dot recognition and template tests; the 
 ## Live session continuation, 2026-10-01
 
 On 2026-10-01, QuickTime had replaced the selected preview with window 493. The running installed app (window 349) was manually refreshed and switched to that new selected source. It reached READY and displayed COPY with path 10 → 6 → 11 → 12 in Play view. A later GUI capture showed the game results menu; Copilot correctly changed to CHECKING and cleared the word and path because no 4x4 board was present. It was left actively watching the selected preview, ready for the player to open another round. This verifies manual source reselection and a board-to-menu transition; it does not add an independently annotated full board, establish game acceptance or score calibration, or prove automatic recovery after window replacement. Private captures remain ignored local artifacts.
+
+## Preview latency update, 2026-10-02
+
+Separated latest-frame capture (30 fps target) from recognition (10 fps target), retained confidence and stale-result clearing, optimized duplicate grid validation, and refreshed Tk pixels without recreating word/path widgets. Actual selected-QuickTime preview measured 19.25 fps and 56.18 ms median capture-to-paint age on a non-board screen. Full suite: 156 passed, one opt-in native test skipped; native probe and stable/fluid GUI checks passed. See `docs/VALIDATION.md` (or `VALIDATION.md` from this directory) for scope and limitations. Total iPad transport delay and accepted-word/score effects remain unmeasured.
+
+Final installed-state check: the updated runtime was staged and relaunched with the selected QuickTime preview. At that point the physical iPad had disappeared from USB enumeration and QuickTime reported natural video dimensions 0×0. The device must be reconnected/unlocked before another physical-board test. This interruption is separate from the measured preview improvement.

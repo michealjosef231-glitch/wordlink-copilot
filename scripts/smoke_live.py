@@ -85,9 +85,12 @@ def main():
             started = time.monotonic()
             if index:
                 display(label)
-                wait_for(root, lambda: not app.ranked_words,
+                wait_for(root, lambda: not app.ranked_words or matches(app, label),
                          "Old suggestions remained after native board changed", timeout=1.5)
-                assert not app.canvas.find_withtag("path")
+                # Latest-only delivery may replace the old board with a fully
+                # verified new result before Tk observes the transient hold.
+                if not app.ranked_words:
+                    assert not app.canvas.find_withtag("path")
             wait_for(root, lambda: matches(app, label),
                      f"Native capture did not recognize {label['file']}")
             root.update()

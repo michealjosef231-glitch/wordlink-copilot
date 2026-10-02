@@ -368,11 +368,12 @@ def test_cancellation_during_ocr_discards_result_and_solver_work(monkeypatch):
         assert entered.wait(2)
         harness.assistant.stop(timeout=.01)
         assert wait_update(harness.assistant, "stopped").ranked_words == ()
-        assert harness.source.close_calls == 0
+        assert not harness.source.closed_during_read
         release.set()
+        harness.source.events.put(None)  # Release the independent capture worker.
         wait_until(lambda: not harness.assistant.is_running)
         assert harness.solve_calls == 0
-        assert harness.assistant.poll().state == "stopped"
+        assert harness.assistant._last_update.state == "stopped"
         assert harness.source.close_calls == 1
     finally:
         release.set()
@@ -401,7 +402,7 @@ def test_processing_resize_preserves_capture_time_and_matches_published_boxes(mo
     captured_at = monotonic()
     source = FakeSource()
     source.events.put(CapturedFrame(original, captured_at, 9))
-    source.events.put(lambda: CapturedFrame(original, captured_at, 10))
+    source.events.put(lambda: CapturedFrame(original, monotonic(), 10))
     monkeypatch.setattr(live, "detect_tiles", lambda _: BOXES)
     monkeypatch.setattr(live, "_content_fingerprint", lambda *_: b"unchanged")
     board = Board(LETTERS, (1,) * 16, BOXES)
@@ -411,7 +412,7 @@ def test_processing_resize_preserves_capture_time_and_matches_published_boxes(mo
     try:
         update = wait_update(assistant, "ready")
         assert update.frame.image.shape == (819, 1024, 3)
-        assert update.frame.captured_at == captured_at
+        assert update.frame.captured_at > captured_at
         assert update.frame.image is not original
         assert not update.frame.image.flags.writeable
         assert max(box[0] + box[2] for box in update.recognition.board.boxes) < update.frame.image.shape[1]
@@ -421,7 +422,7 @@ def test_processing_resize_preserves_capture_time_and_matches_published_boxes(mo
         wait_until(lambda: not assistant.is_running)
 
 
-@pytest.mark.parametrize("kwargs", [{"sample_fps": 0}, {"sample_fps": 61}, {"quiet_frames": 1}, {"threshold": 0}, {"threshold": float("nan")}, {"max_frame_age": -1}])
+@pytest.mark.parametrize("kwargs", [{"preview_fps": 0}, {"preview_fps": 61}, {"sample_fps": 0}, {"sample_fps": 61}, {"quiet_frames": 1}, {"threshold": 0}, {"threshold": float("nan")}, {"max_frame_age": -1}])
 def test_invalid_live_config_fails_clearly(kwargs):
     with pytest.raises(ValueError):
         live.LiveConfig(**kwargs)
@@ -637,4 +638,113 @@ def test_quiet_ink_verification_clears_ready_when_new_read_cannot_be_reused(monk
             assert "uncertain" in update.message.casefold()
         assert harness.recognition_calls == 2
     finally:
+        harness.finish()
+
+
+def test_preview_continues_during_blocked_ocr_and_only_latest_frame_is_retained(monkeypatch):
+    entered, release = Event(), Event()
+    board = Board(LETTERS, (1,) * 16, BOXES)
+
+    def recognition(_):
+        entered.set()
+        assert release.wait(3)
+        return Recognition(board, (), 1)
+
+    harness = Harness(monkeypatch, recognition=recognition)
+    try:
+        for _ in range(3):
+            harness.source.push(board_image())
+        assert entered.wait(2)
+        previous = harness.assistant.poll_frame()
+        assert previous is not None
+        assert harness.assistant.poll_frame() is None
+        for marker in range(6):
+            harness.source.push(board_image(), media_time=marker)
+        wait_until(lambda: harness.source.read_calls >= 10)
+        newest = harness.assistant.poll_frame()
+        assert newest.media_time == 5
+        assert newest.captured_at > previous.captured_at
+        assert not newest.image.flags.writeable
+        assert harness.assistant.poll_frame() is None
+        assert harness.recognition_calls == 1
+        release.set()
+        assert wait_update(harness.assistant, "ready").ranked_words
+    finally:
+        release.set()
+        harness.finish()
+
+
+@pytest.mark.parametrize("event,state", [(None, "ended"),
+    (SourceUnavailable("disconnected during OCR"), "disconnected"),
+    (CapturePermissionError("permission revoked during OCR"), "permission")])
+def test_source_terminal_during_ocr_has_priority_and_discards_pending_preview(monkeypatch, event, state):
+    entered, release = Event(), Event()
+    board = Board(LETTERS, (1,) * 16, BOXES)
+
+    def recognition(_):
+        entered.set()
+        assert release.wait(3)
+        return Recognition(board, (), 1)
+
+    harness = Harness(monkeypatch, recognition=recognition)
+    try:
+        for _ in range(3):
+            harness.source.push(board_image())
+        assert entered.wait(2)
+        harness.source.events.put(event)
+        assert not wait_update(harness.assistant, state).ranked_words
+        assert harness.assistant.poll_frame() is None
+        release.set()
+        wait_until(lambda: not harness.assistant.is_running)
+        assert harness.assistant.poll() is None
+        assert harness.solve_calls == 0
+        assert harness.source.close_calls == 1
+        assert harness.source.close_thread == harness.source.read_thread
+    finally:
+        release.set()
+        harness.finish()
+
+
+def test_duplicate_capture_timestamps_never_count_as_multiple_quiet_frames(monkeypatch):
+    harness = Harness(monkeypatch)
+    try:
+        stamp = monotonic()
+        frame = CapturedFrame(board_image(), stamp)
+        for _ in range(5):
+            harness.source.events.put(frame)
+        wait_until(lambda: harness.source.read_calls >= 6)
+        assert harness.recognition_calls == 0
+        preview = harness.assistant.poll_frame()
+        assert preview.captured_at == stamp
+        assert harness.assistant.poll_frame() is None
+        harness.source.push(board_image())
+        harness.source.push(board_image())
+        assert wait_update(harness.assistant, "ready").ranked_words
+    finally:
+        harness.finish()
+
+
+def test_stale_source_frame_invalidates_preview_and_inflight_ocr(monkeypatch):
+    entered, release = Event(), Event()
+    board = Board(LETTERS, (1,) * 16, BOXES)
+
+    def recognition(_):
+        entered.set()
+        assert release.wait(3)
+        return Recognition(board, (), 1)
+
+    harness = Harness(monkeypatch, recognition=recognition)
+    try:
+        for _ in range(3):
+            harness.source.push(board_image())
+        assert entered.wait(2)
+        harness.source.push(board_image(), age=3)
+        assert "stale" in wait_update(harness.assistant, "waiting").message
+        assert harness.assistant.poll_frame() is None
+        release.set()
+        assert "stale while reading" in wait_update(harness.assistant, "waiting").message
+        assert harness.solve_calls == 0
+        assert harness.settle().ranked_words
+    finally:
+        release.set()
         harness.finish()

@@ -1,11 +1,11 @@
-"""One-worker live screen reader. It never sends gameplay input."""
+"""Latest-frame capture and independent local analysis; no gameplay input."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import math
 from queue import Empty, Queue
-from threading import Event, Lock, Thread, current_thread
+from threading import Condition, Event, Lock, Thread, current_thread
 from time import monotonic, perf_counter
 
 import cv2
@@ -34,7 +34,8 @@ MAX_PROCESSING_DIMENSION = 1024
 
 @dataclass(frozen=True)
 class LiveConfig:
-    sample_fps: float = 4.0
+    sample_fps: float = 10.0
+    preview_fps: float = 30.0
     quiet_frames: int = 3
     # A detected grid edge can shift one codec pixel between adjacent frames;
     # that alone yields ~0.014 mean board-crop difference in the reference
@@ -43,12 +44,12 @@ class LiveConfig:
     max_frame_age: float = 1.5
 
     def __post_init__(self) -> None:
-        for name in ("sample_fps", "threshold", "max_frame_age"):
+        for name in ("sample_fps", "preview_fps", "threshold", "max_frame_age"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be a positive finite number")
-        if self.sample_fps > 60:
-            raise ValueError("sample_fps cannot exceed 60")
+        if self.sample_fps > 60 or self.preview_fps > 60:
+            raise ValueError("Frame rates cannot exceed 60")
         if self.threshold > 1:
             raise ValueError("threshold must be a normalized image difference at most 1")
         if isinstance(self.quiet_frames, bool) or not isinstance(self.quiet_frames, int) or self.quiet_frames < 2:
@@ -152,7 +153,7 @@ class LiveAssistant:
 
     A controller owns one source and is single-use after it ends or stops.
     Sources must finish each read in finite time. Cancellation is immediate for
-    published suggestions; resource cleanup happens on the worker after read
+    published suggestions; resource cleanup happens on the capture worker after read
     finishes, so read and close never access native buffers concurrently.
     """
 
@@ -162,6 +163,13 @@ class LiveAssistant:
         self.policy = policy
         self.config = config or LiveConfig()
         self._stop = Event()
+        self._terminal = Event()
+        self._frames = Condition()
+        self._latest_frame: CapturedFrame | None = None
+        self._frame_sequence = 0
+        self._preview_sequence = 0
+        self._invalid_before = float("-inf")
+        self._capture_thread: Thread | None = None
         self._lifecycle_lock = Lock()
         self._update_lock = Lock()
         self._close_lock = Lock()
@@ -174,7 +182,8 @@ class LiveAssistant:
 
     @property
     def is_running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return any(worker is not None and worker.is_alive()
+                   for worker in (self._thread, self._capture_thread))
 
     def start(self) -> None:
         with self._lifecycle_lock:
@@ -185,7 +194,9 @@ class LiveAssistant:
             self._started = True
             self._publish(LiveUpdate("waiting", f"Waiting for a settled 4x4 board from {self.source.label}"))
             self._thread = Thread(target=self._run, name="wordlink-live-reader", daemon=True)
+            self._capture_thread = Thread(target=self._capture, name="wordlink-live-capture", daemon=True)
             self._thread.start()
+            self._capture_thread.start()
 
     def stop(self, timeout: float = 0.5) -> None:
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout < 0:
@@ -193,14 +204,19 @@ class LiveAssistant:
         with self._lifecycle_lock:
             self._stop.set()
             self._publish(LiveUpdate("stopped", "Live reading stopped"))
-            worker = self._thread
-            if worker is None:
+            workers = (self._thread, self._capture_thread)
+            with self._frames:
+                self._latest_frame = None
+                self._frames.notify_all()
+            if self._thread is None:
                 self._started = True
                 cleanup_error = self._close_source()
                 if cleanup_error:
                     self._publish(LiveUpdate("stopped", f"Live reading stopped; cleanup failed: {cleanup_error}"))
-        if worker is not None and worker is not current_thread():
-            worker.join(timeout)
+        deadline = perf_counter() + timeout
+        for worker in workers:
+            if worker is not None and worker is not current_thread():
+                worker.join(max(0, deadline - perf_counter()))
 
     def poll(self) -> LiveUpdate | None:
         with self._update_lock:
@@ -218,6 +234,71 @@ class LiveAssistant:
                 return expired
             return update
 
+    def poll_frame(self) -> CapturedFrame | None:
+        """Consume the newest preview once, without waiting for recognition.
+
+        Intermediate captures are discarded. A frame is never returned after
+        stop, source termination or freshness expiry.
+        """
+        with self._frames:
+            if self._stop.is_set() or self._terminal.is_set():
+                return None
+            if self._preview_sequence == self._frame_sequence:
+                return None
+            self._preview_sequence = self._frame_sequence
+            frame = self._latest_frame
+            return frame if self._fresh(frame) else None
+
+    def _capture(self) -> None:
+        interval = 1 / self.config.preview_fps
+        last_timestamp = float("-inf")
+        try:
+            while not self._stop.is_set() and not self._terminal.is_set():
+                started = perf_counter()
+                raw = self.source.read()
+                if self._stop.is_set() or self._terminal.is_set():
+                    break
+                if raw is None:
+                    self._publish(LiveUpdate("ended", "The selected recording has ended"))
+                    break
+                if not self._fresh(raw):
+                    # Invalidate in-flight OCR as well as pending preview.
+                    # A stale source event must not be overwritten by an
+                    # older, still-computing analysis result.
+                    with self._update_lock:
+                        with self._frames:
+                            self._invalid_before = monotonic()
+                            self._latest_frame = None
+                            self._frame_sequence += 1
+                            self._frames.notify_all()
+                    self._publish(LiveUpdate("waiting", "Capture is stale; waiting for a fresh frame"))
+                elif raw.captured_at > last_timestamp:
+                    frame = _prepare_frame(raw)
+                    last_timestamp = raw.captured_at
+                    with self._frames:
+                        if not self._stop.is_set() and not self._terminal.is_set():
+                            self._latest_frame = frame
+                            self._frame_sequence += 1
+                            self._frames.notify_all()
+                self._stop.wait(max(0, interval - (perf_counter() - started)))
+        except (CapturePermissionError, PermissionError) as exc:
+            self._publish(LiveUpdate("permission", f"Screen Recording permission is required: {exc}"))
+        except SourceUnavailable as exc:
+            self._publish(LiveUpdate("disconnected", f"The selected source disconnected: {exc}"))
+        except Exception as exc:
+            self._publish(LiveUpdate("error", f"Live capture failed: {str(exc) or type(exc).__name__}"))
+        finally:
+            cleanup_error = self._close_source()
+            if self._stop.is_set():
+                message = "Live reading stopped"
+                if cleanup_error:
+                    message += f"; cleanup failed: {cleanup_error}"
+                self._publish(LiveUpdate("stopped", message))
+            elif cleanup_error:
+                self._publish(LiveUpdate("error", f"Source cleanup failed: {cleanup_error}"))
+            with self._frames:
+                self._frames.notify_all()
+
     def _fresh(self, frame: CapturedFrame | None) -> bool:
         if frame is None or isinstance(frame.captured_at, bool) or not isinstance(frame.captured_at, (int, float)):
             return False
@@ -226,8 +307,18 @@ class LiveAssistant:
 
     def _publish(self, update: LiveUpdate) -> None:
         with self._update_lock:
+            terminal = update.state in {"stopped", "ended", "permission", "disconnected", "error"}
             if self._stop.is_set() and update.state != "stopped":
                 return
+            if self._terminal.is_set() and not terminal:
+                return
+            if update.frame is not None and update.frame.captured_at <= self._invalid_before:
+                return
+            if terminal:
+                self._terminal.set()
+                with self._frames:
+                    self._latest_frame = None
+                    self._frames.notify_all()
             self._sequence += 1
             update = replace(update, sequence=self._sequence)
             self._last_update = update
@@ -266,21 +357,29 @@ class LiveAssistant:
             cached_read = None
             cached_ranked = ()
 
+        last_sequence = 0
+        last_gap = self._invalid_before
         try:
-            while not self._stop.is_set():
+            while not self._stop.is_set() and not self._terminal.is_set():
+                with self._frames:
+                    self._frames.wait_for(lambda: self._frame_sequence != last_sequence
+                                          or self._stop.is_set() or self._terminal.is_set())
+                    if self._stop.is_set() or self._terminal.is_set():
+                        break
+                    frame = self._latest_frame
+                    last_sequence = self._frame_sequence
+                    gap = self._invalid_before
+                if gap != last_gap:
+                    invalidate()
+                    last_gap = gap
+                if frame is None:
+                    continue
                 started = perf_counter()
-                raw = self.source.read()
-                if self._stop.is_set():
-                    break
-                if raw is None:
-                    self._publish(LiveUpdate("ended", "The selected recording has ended"))
-                    break
-                if not self._fresh(raw):
+                if not self._fresh(frame):
                     invalidate()
                     self._publish(LiveUpdate("waiting", "Capture is stale; waiting for a fresh frame"))
                     self._stop.wait(max(0, interval - (perf_counter() - started)))
                     continue
-                frame = _prepare_frame(raw)
                 try:
                     boxes = detect_tiles(frame.image)
                     crop = _board_crop(frame.image, boxes)
@@ -339,9 +438,9 @@ class LiveAssistant:
                         self._publish(LiveUpdate("review", f"Board needs review: {exc}", frame))
                         self._stop.wait(max(0, interval - (perf_counter() - started)))
                         continue
-                    if self._stop.is_set():
+                    if self._stop.is_set() or self._terminal.is_set():
                         break
-                    if not self._fresh(frame):
+                    if not self._fresh(frame) or frame.captured_at <= self._invalid_before:
                         invalidate()
                         self._publish(LiveUpdate("waiting", "Capture became stale while reading; waiting for a fresh frame"))
                         self._stop.wait(max(0, interval - (perf_counter() - started)))
@@ -369,7 +468,7 @@ class LiveAssistant:
                             solve_ms = (perf_counter() - solving) * 1000
                             solved_identity = identity
                         cached_ranked = solved_ranked
-                    if self._stop.is_set():
+                    if self._stop.is_set() or self._terminal.is_set():
                         break
                     if not self._fresh(frame):
                         invalidate()
@@ -384,21 +483,8 @@ class LiveAssistant:
                         invalidate()
                         self._publish(LiveUpdate("waiting", "Capture is stale; waiting for a fresh frame"))
                 self._stop.wait(max(0, interval - (perf_counter() - started)))
-        except (CapturePermissionError, PermissionError) as exc:
-            self._publish(LiveUpdate("permission", f"Screen Recording permission is required: {exc}"))
-        except SourceUnavailable as exc:
-            self._publish(LiveUpdate("disconnected", f"The selected source disconnected: {exc}"))
         except Exception as exc:
             self._publish(LiveUpdate("error", f"Live reading failed: {str(exc) or type(exc).__name__}"))
-        finally:
-            cleanup_error = self._close_source()
-            if self._stop.is_set():
-                message = "Live reading stopped"
-                if cleanup_error:
-                    message += f"; cleanup failed: {cleanup_error}"
-                self._publish(LiveUpdate("stopped", message))
-            elif cleanup_error:
-                self._publish(LiveUpdate("error", f"Source cleanup failed: {cleanup_error}"))
 
     def _publish_read(self, frame: CapturedFrame, read: Recognition, ranked: tuple[RankedWord, ...], started: float, solve_ms: float) -> None:
         elapsed_ms = (perf_counter() - started) * 1000

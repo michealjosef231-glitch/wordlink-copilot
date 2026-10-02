@@ -74,6 +74,7 @@ def detect_tiles(image: np.ndarray) -> tuple[Box, ...]:
     candidates = _candidates(image)
     best: tuple[Box, ...] | None = None
     best_quality = 0.0
+    blue_fractions: dict[tuple[Box, ...], float] = {}
     for base in candidates:
         width, height = base[2:]
         # The recording visibly shrinks recently selected tiles during feedback.
@@ -100,7 +101,13 @@ def detect_tiles(image: np.ndarray) -> tuple[Box, ...]:
                 if horizontal.std() > width * .10 or vertical.std() > height * .10:
                     continue
                 boxes = tuple(b for row in arrangement for b in row)
-                blue_fraction = _blue_fraction(image, boxes)
+                # Different base tiles often generate the same grid. Its blue
+                # pixels cannot change within this call, so inspect them once.
+                # Keep the base-dependent geometry and quality calculations:
+                # varying tile sizes can change eligibility and tie ordering.
+                if boxes not in blue_fractions:
+                    blue_fractions[boxes] = _blue_fraction(image, boxes)
+                blue_fraction = blue_fractions[boxes]
                 if blue_fraction < .18:
                     continue
                 quality = blue_fraction - float(horizontal.std() + vertical.std()) / (width + height)
